@@ -1,0 +1,12 @@
+{
+  "name": "skilltracker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Englisch schreiben, bewerten lassen, besser werden.",
+  "scripts": {
+    "test": "node --test tests/",
+    "serve": "node tools/serve.mjs"
+  },
+  "engines": { "node": ">=20" }
+}
