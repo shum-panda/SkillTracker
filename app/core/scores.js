@@ -10,7 +10,7 @@ export const AXES = [
   { key: "diversity", label: "Wortvielfalt", source: "gezählt",
     how: "MTLD: wie lange du schreibst, bevor sich Wörter stark wiederholen. MTLD 30 = 0, MTLD 110 = 100." },
   { key: "level", label: "Wortniveau", source: "gezählt",
-    how: "Anteil seltenerer Wörter (seltener als Alltagswörter laut wordfreq). 25 % und mehr = 100." },
+    how: "Anteil seltenerer Wörter (seltener als Alltagswörter laut wordfreq). 15 % und mehr = 100." },
   { key: "complexity", label: "Komplexität", source: "gezählt",
     how: "Halb Satzlänge (6 Wörter = 0, 22 = 100), halb Nebensätze je Satz (because, which, although … 1,2 = 100)." },
   { key: "style", label: "Stil", source: "KI",
@@ -34,7 +34,7 @@ export function computeScores(metrics, analysis) {
     grammar: clamp(100 * Math.exp(-density(analysis.errors, "grammar", words) / 8)),
     structure: clamp(100 * Math.exp(-density(analysis.errors, "structure", words) / 4)),
     diversity: clamp(((metrics.mtld - 30) / 80) * 100),
-    level: clamp((metrics.levelShare / 0.25) * 100),
+    level: clamp((metrics.levelShare / 0.15) * 100),
     complexity: clamp(0.5 * ((metrics.avgLen - 6) / 16) * 100 + 0.5 * (metrics.subPerSentence / 1.2) * 100),
     style: clamp(analysis.style?.score),
   };

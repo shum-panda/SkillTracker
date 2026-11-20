@@ -19,7 +19,7 @@ test("Formeln der Spec", () => {
   assert.equal(s.grammar, 69);     // d = 3  -> 100·e^(−3/8)
   assert.equal(s.structure, 78);   // d = 1  -> 100·e^(−1/4)
   assert.equal(s.diversity, 50);
-  assert.equal(s.level, 40);
+  assert.equal(s.level, 67);
   assert.equal(s.complexity, 50);
   assert.equal(s.style, 62);
 });

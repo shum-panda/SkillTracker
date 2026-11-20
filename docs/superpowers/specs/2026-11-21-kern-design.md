@@ -63,7 +63,7 @@ Wörter = `[A-Za-z]+(?:['’][A-Za-z]+)*`, kleingeschrieben. Sätze = Trennung a
 | **Grammatik** | KI-Fehler der Gruppe `grammar` | d = gewichtete Fehler je 100 Wörter (leicht = 1, schwer = 2); `100·e^(−d/8)` |
 | **Satzbau** | KI-Fehler der Gruppe `structure` | wie oben mit `100·e^(−d/4)` |
 | **Wortvielfalt** | gezählt | MTLD (Schwelle 0,72, Mittel aus beiden Richtungen); `clamp((MTLD − 30) / 80 · 100)` |
-| **Wortniveau** | gezählt | Anteil bekannter Wörter mit Zipf-Häufigkeit < 4,5 (seltener als „Alltagswort“); `clamp(Anteil / 0,25 · 100)`. Wörter, die nicht in der Liste stehen (Namen, Tippfehler), zählen nicht |
+| **Wortniveau** | gezählt | Anteil bekannter Wörter mit Zipf-Häufigkeit < 4,5 (seltener als „Alltagswort“); `clamp(Anteil / 0,15 · 100)`. Wörter, die nicht in der Liste stehen (Namen, Tippfehler), zählen nicht |
 | **Komplexität** | gezählt | Ø Wörter je Satz (L) und Nebensatz-Signale je Satz (S: because, although, which, who, whose, whom, when, while, if, unless, since, whereas, until, that …); `clamp(0,5·(L−6)/16·100 + 0,5·S/1,2·100)` |
 | **Stil** | KI | Wert 0–100 nach festem Raster: Abwechslung der Satzanfänge, Verbindungswörter, Register, idiomatische Wendungen |
 
