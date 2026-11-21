@@ -36,7 +36,9 @@ function editProvider(ctx, existing, onSaved) {
   const $ = (id) => dlg.querySelector(`#${id}`);
   const read = () => ({
     id: p.id, type: $("pf-type").value, name: $("pf-name").value.trim() || PROVIDER_TYPES[$("pf-type").value].label,
-    apiKey: $("pf-key").value.trim(), baseUrl: $("pf-base").value.trim(), model: $("pf-model").value.trim(),
+    apiKey: $("pf-key").value.trim(), model: $("pf-model").value.trim(),
+    // Eigene Adresse nur bei "kompatibel" – sonst ginge ein Schlüssel womöglich an ein verstecktes Ziel.
+    baseUrl: PROVIDER_TYPES[$("pf-type").value].needsBaseUrl ? $("pf-base").value.trim() : "",
   });
   const sync = () => {
     const t = PROVIDER_TYPES[$("pf-type").value];
@@ -123,7 +125,8 @@ export async function render(root, ctx) {
         <option value="light" ${theme === "light" ? "selected" : ""}>hell</option>
         <option value="dark" ${theme === "dark" ? "selected" : ""}>dunkel</option></select></div>
     </section>
-    <section class="card">
+    ${ctx.demo ? '<section class="card"><h2>Sicherung</h2><p class="muted">In der Demo aus – verlasse die Demo, um deine eigenen Daten zu sichern oder zu importieren.</p></section>' : ""}
+    <section class="card ${ctx.demo ? "hidden" : ""}">
       <h2>Sicherung</h2>
       <p class="muted small">Als Datei sichern oder auf ein anderes Gerät übertragen. Später kommt die Übertragung per QR-Code im WLAN dazu.</p>
       <label class="check"><input type="checkbox" id="withkeys"> API-Schlüssel mit in die Datei schreiben</label>

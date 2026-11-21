@@ -5,7 +5,8 @@ import { parseModelJSON, requestJSON, schemaHint } from "./http.js";
 
 export const OPENAI_BASE = "https://api.openai.com/v1";
 
-const base = (p) => String(p.baseUrl || OPENAI_BASE).replace(/\/+$/, "");
+// Eine eigene Adresse gibt es nur bei "kompatibel"; ein OpenAI-Schlüssel geht immer an api.openai.com.
+const base = (p) => String(p.type === "compatible" ? p.baseUrl || OPENAI_BASE : OPENAI_BASE).replace(/\/+$/, "");
 
 function headers(p) {
   const h = { "content-type": "application/json" };

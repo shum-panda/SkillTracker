@@ -16,11 +16,11 @@ test("splitSentences trennt nicht nach Abkürzungen", () => {
   assert.deepEqual(splitSentences("   "), []);
 });
 
-test("mtld: Wiederholung niedrig, lauter neue Wörter = Länge", () => {
+test("mtld: Wiederholung niedrig, lauter neue Wörter = Obergrenze", () => {
   const same = Array(100).fill("go");
   assert.ok(mtld(same) < 5);
   const distinct = Array.from({ length: 100 }, (_, i) => "w" + i);
-  assert.equal(mtld(distinct), 100);
+  assert.equal(mtld(distinct), 200);
   assert.equal(mtld([]), 0);
 });
 

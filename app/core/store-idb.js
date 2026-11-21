@@ -1,10 +1,7 @@
 // IndexedDB-Speicher (nur im Browser). Gleiche Schnittstelle wie MemoryStore.
+// Schreibvorgänge gelten erst als erledigt, wenn die Transaktion abgeschlossen ist (oncomplete) –
+// ein voller Speicher zeigt sich oft erst als Abbruch der Transaktion.
 import { sortEntries } from "./store.js";
-
-const req = (r) => new Promise((resolve, reject) => {
-  r.onsuccess = () => resolve(r.result);
-  r.onerror = () => reject(r.error);
-});
 
 export class IdbStore {
   constructor(db) {
@@ -29,22 +26,43 @@ export class IdbStore {
     });
   }
 
-  tx(store, mode = "readonly") {
-    return this.db.transaction(store, mode).objectStore(store);
+  // Führt fn(objectStore) in einer Transaktion aus; liefert das Ergebnis der letzten Anfrage nach Abschluss.
+  run(names, mode, fn) {
+    return new Promise((resolve, reject) => {
+      let tx;
+      try {
+        tx = this.db.transaction(names, mode);
+      } catch (e) {
+        reject(e);
+        return;
+      }
+      let result;
+      const req = fn(tx);
+      if (req) req.onsuccess = () => { result = req.result; };
+      tx.oncomplete = () => resolve(result);
+      const fail = () => {
+        const err = tx.error || req?.error || new Error("Speichern fehlgeschlagen");
+        reject(err.name === "QuotaExceededError" ? new Error("Der Speicher auf diesem Gerät ist voll.") : err);
+      };
+      tx.onerror = fail;
+      tx.onabort = fail;
+    });
   }
 
-  getSetting(key) { return req(this.tx("settings").get(key)); }
-  async setSetting(key, value) { await req(this.tx("settings", "readwrite").put(value, key)); }
-  async addEntry(entry) {
+  getSetting(key) { return this.run("settings", "readonly", (tx) => tx.objectStore("settings").get(key)); }
+  setSetting(key, value) { return this.run("settings", "readwrite", (tx) => tx.objectStore("settings").put(value, key)).then(() => {}); }
+  addEntry(entry) {
     const { id, ...rest } = entry;
-    return req(this.tx("entries", "readwrite").add(rest));
+    return this.run("entries", "readwrite", (tx) => tx.objectStore("entries").add(rest));
   }
-  async putEntry(entry) { await req(this.tx("entries", "readwrite").put(entry)); }
-  getEntry(id) { return req(this.tx("entries").get(Number(id))); }
-  async listEntries() { return sortEntries(await req(this.tx("entries").getAll())); }
-  async deleteEntry(id) { await req(this.tx("entries", "readwrite").delete(Number(id))); }
-  async clearAll() {
-    await req(this.tx("settings", "readwrite").clear());
-    await req(this.tx("entries", "readwrite").clear());
+  putEntry(entry) { return this.run("entries", "readwrite", (tx) => tx.objectStore("entries").put(entry)).then(() => {}); }
+  getEntry(id) { return this.run("entries", "readonly", (tx) => tx.objectStore("entries").get(Number(id))); }
+  async listEntries() { return sortEntries((await this.run("entries", "readonly", (tx) => tx.objectStore("entries").getAll())) || []); }
+  deleteEntry(id) { return this.run("entries", "readwrite", (tx) => tx.objectStore("entries").delete(Number(id))).then(() => {}); }
+  clearAll() {
+    return this.run(["settings", "entries"], "readwrite", (tx) => {
+      tx.objectStore("settings").clear();
+      return tx.objectStore("entries").clear();
+    }).then(() => {});
   }
 }

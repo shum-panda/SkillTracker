@@ -1,31 +1,46 @@
 // Findet die Fehler-Zitate der KI im Text. Der Reihe nach ab dem vorigen Treffer, sonst von vorne;
-// exakt, sonst ohne Groß/klein. Überlappende oder nicht gefundene Zitate bekommen keine Markierung.
+// erst mit, dann ohne Groß/klein. Apostroph-Varianten (’ ‘ ` ') und Leerraum (Zeilenumbruch, mehrere Leerzeichen)
+// gelten als gleich. Überlappende oder nicht gefundene Zitate bekommen keine Markierung.
 
-function findFree(hay, needle, from, taken) {
-  let i = hay.indexOf(needle, from);
-  while (i !== -1) {
-    const end = i + needle.length;
-    if (!taken.some((t) => i < t.end && end > t.start)) return i;
-    i = hay.indexOf(needle, i + 1);
+const APOS = /['’‘`]/;
+
+function pattern(quote) {
+  let src = "";
+  for (const part of quote.trim().split(/(\s+)/)) {
+    if (!part) continue;
+    if (/^\s+$/.test(part)) { src += "\\s+"; continue; }
+    for (const ch of part) src += APOS.test(ch) ? "['’‘`]" : ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
-  return -1;
+  return src;
+}
+
+function findFree(text, re, from, taken) {
+  re.lastIndex = from;
+  let m;
+  while ((m = re.exec(text))) {
+    const start = m.index;
+    const end = start + m[0].length;
+    if (m[0].length && !taken.some((t) => start < t.end && end > t.start)) return { start, end };
+    re.lastIndex = start + 1;
+  }
+  return null;
 }
 
 export function locateErrors(text, errors) {
   const src = String(text || "");
-  const lower = src.toLowerCase();
   const taken = [];
   const out = [];
   let cursor = 0;
   (errors || []).forEach((e, index) => {
     const q = String(e?.quote || "");
     if (!q.trim()) return;
-    let start = findFree(src, q, cursor, taken);
-    if (start === -1) start = findFree(src, q, 0, taken);
-    if (start === -1) start = findFree(lower, q.toLowerCase(), cursor, taken);
-    if (start === -1) start = findFree(lower, q.toLowerCase(), 0, taken);
-    if (start === -1) return;
-    const span = { index, start, end: start + q.length };
+    const p = pattern(q);
+    const exact = new RegExp(p, "gu");
+    const loose = new RegExp(p, "giu");
+    const hit = findFree(src, exact, cursor, taken) || findFree(src, exact, 0, taken)
+      || findFree(src, loose, cursor, taken) || findFree(src, loose, 0, taken);
+    if (!hit) return;
+    const span = { index, ...hit };
     taken.push(span);
     out.push(span);
     cursor = span.end;

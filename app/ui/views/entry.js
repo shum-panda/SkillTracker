@@ -21,7 +21,11 @@ export async function render(root, ctx, [idParam]) {
     root.innerHTML = '<div class="card"><h2>Text nicht gefunden</h2><a class="btn" href="#/">Zur Übersicht</a></div>';
     return;
   }
-  const all = await ctx.store.listEntries();
+  await renderEntry(root, ctx, e, await ctx.store.listEntries());
+}
+
+// Auch für Ergebnisse, die nicht gespeichert werden konnten (unsaved: kein Löschen, Hinweis oben).
+export async function renderEntry(root, ctx, e, all, { unsaved = false } = {}) {
   const before = all.filter((x) => x.createdAt < e.createdAt).slice(0, 5);
   const avg = averageScores(before);
   const a = e.analysis;
@@ -37,6 +41,7 @@ export async function render(root, ctx, [idParam]) {
       <div class="row between"><h1>${esc(e.topic || "Dein Text")}</h1><span class="chip level" title="geschätztes Niveau">${esc(a.cefr)}</span></div>
       <p>${esc(a.summary)}</p>
     </div>
+    ${unsaved ? '<p class="note"><b>Nicht gespeichert.</b> Das Speichern auf diesem Gerät ist fehlgeschlagen (Speicher voll?). Dein Text bleibt als Entwurf unter „Neuer Text“ erhalten.</p>' : ""}
     ${rel === "short" ? '<p class="note">Kurzer Text – Wortvielfalt und Wortniveau schwanken bei unter 50 Wörtern stark.</p>' : ""}
     <div class="grid side">
       <section class="card">
@@ -96,7 +101,7 @@ export async function render(root, ctx, [idParam]) {
     <section class="card">
       <div class="row between">
         <div class="small muted">Bewertet mit ${esc(e.model.analysis)}${e.model.ocr ? ` · eingelesen mit ${esc(e.model.ocr)}` : ""}</div>
-        <button class="btn small danger" id="delete">Text löschen</button>
+        ${unsaved ? "" : '<button class="btn small danger" id="delete">Text löschen</button>'}
       </div>
       ${e.thumb ? `<details><summary class="small">Foto ansehen</summary><img class="thumb" alt="Foto des Textes" src="${esc(e.thumb)}"></details>` : ""}
     </section>`;
@@ -138,7 +143,7 @@ export async function render(root, ctx, [idParam]) {
       document.getElementById("close").onclick = closeModal;
     };
   }
-  root.querySelector("#delete").onclick = async () => {
+  if (!unsaved) root.querySelector("#delete").onclick = async () => {
     if (!(await confirmDialog("Text löschen?", "Der Text und seine Bewertung werden von diesem Gerät gelöscht.", { ok: "Löschen", danger: true }))) return;
     await ctx.store.deleteEntry(e.id);
     ctx.toast("Gelöscht.");

@@ -25,8 +25,12 @@ export async function exportData(store, { includeKeys = false } = {}) {
 
 function cleanProvider(p) {
   if (!isObj(p) || !PROVIDER_TYPES[p.type] || !s(p.id)) return null;
-  return { id: s(p.id, 64), type: p.type, name: s(p.name, 80), apiKey: s(p.apiKey, 400), baseUrl: s(p.baseUrl, 400), model: s(p.model, 200) };
+  return { id: s(p.id, 64), type: p.type, name: s(p.name, 80), apiKey: s(p.apiKey, 400),
+    baseUrl: p.type === "compatible" ? s(p.baseUrl, 400) : "", model: s(p.model, 200) };
 }
+
+// Wohin ein Schlüssel geschickt würde: Typ + Adresse. Ändert sich das, bleibt der alte Schlüssel nicht hängen.
+const target = (p) => `${p.type}|${p.type === "compatible" ? String(p.baseUrl || "").replace(/\/+$/, "") : ""}`;
 
 function cleanSettings(raw) {
   const out = {};
@@ -77,7 +81,8 @@ export async function applyImport(store, parsed, { withKeys = false } = {}) {
     const current = (await store.getSetting("providers")) || [];
     const byId = new Map(current.map((p) => [p.id, p]));
     for (const p of providers) {
-      const keep = byId.get(p.id)?.apiKey || "";
+      const old = byId.get(p.id);
+      const keep = old && target(old) === target(p) ? old.apiKey || "" : "";
       byId.set(p.id, { ...p, apiKey: withKeys && p.apiKey ? p.apiKey : keep });
     }
     await store.setSetting("providers", [...byId.values()]);

@@ -22,8 +22,11 @@ function mtldPass(tokens, threshold) {
     }
   }
   if (count > 0) factors += (1 - ttr) / (1 - threshold);
-  return factors > 0 ? tokens.length / factors : tokens.length;
+  // Ohne Wiederholung ginge der Wert gegen unendlich: auf MTLD_MAX deckeln (so erhöht eine Wiederholung nie die Vielfalt).
+  return factors > 0 ? Math.min(MTLD_MAX, tokens.length / factors) : MTLD_MAX;
 }
+
+export const MTLD_MAX = 200;
 
 // Measure of Textual Lexical Diversity (McCarthy & Jarvis 2010), Mittel aus vorwärts und rückwärts.
 export function mtld(tokens, threshold = 0.72) {

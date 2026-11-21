@@ -19,7 +19,7 @@ function headers(p, extra = {}) {
 // effort gibt es ab den 4.6-Modellen; ältere lehnen das Feld ab.
 export function supportsEffort(model) {
   const m = String(model).match(/^claude-[a-z]+-(\d+)(?:-(\d+))?/);
-  if (!m) return true;
+  if (!m) return false; // unbekannt/alt (z. B. claude-3-5-haiku-latest): lieber ohne effort
   const major = Number(m[1]);
   const minor = m[2] && m[2].length < 3 ? Number(m[2]) : 0;
   return major >= 5 || (major === 4 && minor >= 6);
