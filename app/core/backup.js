@@ -29,6 +29,9 @@ export async function exportData(store, { includeKeys = false } = {}) {
     cards: store.listCards ? await store.listCards() : [] };
 }
 
+export const isUid = (v) => typeof v === "string" && /^[A-Za-z0-9-]{8,64}$/.test(v);
+const uidPart = (v) => (isUid(v) ? { uid: v } : {});
+
 const iso = (v) => {
   const d = new Date(v);
   return v && !Number.isNaN(d.getTime()) ? d.toISOString() : null;
@@ -41,14 +44,15 @@ function cleanSched(x) {
     ease: num(x.ease, 2.5, 1.3, 5), reps: num(x.reps, 0, 0, 1e6), lapses: num(x.lapses, 0, 0, 1e6), firstStudied: iso(x.firstStudied) };
 }
 
-function cleanCard(c) {
+export function cleanCard(c) {
   if (!isObj(c) || !["gap", "vocab", "manual"].includes(c.type)) return null;
   const front = s(c.front, 500).trim();
   const back = s(c.back, 500).trim();
   if (!front || !back) return null;
   return makeCard({ type: c.type, front, back, note: s(c.note, 2000), context: s(c.context, 2000),
     sources: (Array.isArray(c.sources) ? c.sources : []).filter(Number.isInteger).slice(0, 200),
-    suspended: c.suspended === true, createdAt: iso(c.createdAt) || new Date().toISOString(), sched: cleanSched(c.sched) });
+    suspended: c.suspended === true, createdAt: iso(c.createdAt) || new Date().toISOString(), sched: cleanSched(c.sched),
+    ...uidPart(c.uid), _sourceUids: (Array.isArray(c.sourceUids) ? c.sourceUids : []).filter(isUid).slice(0, 200) });
 }
 
 function cleanProvider(p) {
@@ -58,9 +62,9 @@ function cleanProvider(p) {
 }
 
 // Wohin ein Schlüssel geschickt würde: Typ + Adresse. Ändert sich das, bleibt der alte Schlüssel nicht hängen.
-const target = (p) => `${p.type}|${p.type === "compatible" ? String(p.baseUrl || "").replace(/\/+$/, "") : ""}`;
+export const target = (p) => `${p.type}|${p.type === "compatible" ? String(p.baseUrl || "").replace(/\/+$/, "") : ""}`;
 
-function cleanSettings(raw) {
+export function cleanSettings(raw) {
   const out = {};
   if (!isObj(raw)) return out;
   if (Array.isArray(raw.providers)) out.providers = raw.providers.map(cleanProvider).filter(Boolean);
@@ -73,11 +77,12 @@ function cleanSettings(raw) {
       && d.total >= 1 && d.total <= 100 && Number.isInteger(d.correct) && d.correct >= 0 && d.correct <= d.total)
       .map((d) => ({ createdAt: iso(d.createdAt), category: d.category, total: d.total, correct: d.correct })).slice(-500);
   }
+  if (Array.isArray(raw.deletedEntryUids)) out.deletedEntryUids = raw.deletedEntryUids.filter(isUid).slice(-5000);
   if (Array.isArray(raw.deletedCardKeys)) out.deletedCardKeys = raw.deletedCardKeys.filter((k) => typeof k === "string" && k.length < 600).slice(-5000);
   return out;
 }
 
-function cleanEntry(e) {
+export function cleanEntry(e) {
   if (!isObj(e) || typeof e.text !== "string" || !e.text.trim()) return null;
   if (validate(ANALYSIS_SCHEMA, e.analysis).length) return null;
   if (!isObj(e.scores) || !AXES.every((a) => Number.isFinite(e.scores[a.key]))) return null;
@@ -97,9 +102,11 @@ function cleanEntry(e) {
     model: { ocr: s(e.model?.ocr, 200), analysis: s(e.model?.analysis, 200) },
     revisions: (Array.isArray(e.revisions) ? e.revisions : []).map(cleanRevision).filter(Boolean).slice(0, 50),
     schemaVersion: 1,
+    ...uidPart(e.uid),
     // nur für den Import: alte IDs, werden in applyImport auf neue umgeschrieben und dann entfernt
     _oldId: Number.isInteger(e.id) ? e.id : null,
     _revisionOf: Number.isInteger(e.revisionOf) ? e.revisionOf : null,
+    _revisionOfUid: isUid(e.revisionOfUid) ? e.revisionOfUid : null,
   };
 }
 
@@ -111,7 +118,7 @@ function cleanRevision(r) {
     && categoryById(t.category) && OUTCOMES.includes(t.outcome))
     .map((t) => ({ errorIndex: t.errorIndex, category: t.category, outcome: t.outcome, answer: s(t.answer, 2000) }));
   return { createdAt: created.toISOString(), mode: r.mode, tasks, revisedText: s(r.revisedText),
-    _resultOld: Number.isInteger(r.resultEntryId) ? r.resultEntryId : null };
+    _resultOld: Number.isInteger(r.resultEntryId) ? r.resultEntryId : null, _resultUid: isUid(r.resultEntryUid) ? r.resultEntryUid : null };
 }
 
 export function parseImport(obj) {
@@ -143,9 +150,14 @@ export async function applyImport(store, parsed, { withKeys = false } = {}) {
   // Erst alle Einträge anlegen (neue IDs), dann Verweise zwischen Original und Überarbeitung umschreiben.
   const idMap = new Map();
   const added = [];
+  const known = new Map((await store.listEntries()).filter((e) => e.uid).map((e) => [e.uid, e.id]));
   for (const e of parsed.entries) {
-    const { _oldId, _revisionOf, ...rest } = e;
-    const clean = { ...rest, revisions: rest.revisions.map(({ _resultOld, ...r }) => r) };
+    const { _oldId, _revisionOf, _revisionOfUid, ...rest } = e;
+    if (rest.uid && known.has(rest.uid)) { // gibt es schon (z. B. Sicherung zweimal eingespielt)
+      if (_oldId !== null) idMap.set(_oldId, known.get(rest.uid));
+      continue;
+    }
+    const clean = { ...rest, revisions: rest.revisions.map(({ _resultOld, _resultUid, ...r }) => r) };
     const id = await store.addEntry(clean);
     if (_oldId !== null) idMap.set(_oldId, id);
     added.push({ id, entry: e });
@@ -163,10 +175,10 @@ export async function applyImport(store, parsed, { withKeys = false } = {}) {
   }
   // Karten: Quellen auf neue IDs, unbekannte Quellen weg; gleiche Karten zusammenführen.
   if (store.listCards && parsed.cards?.length) {
-    const incoming = parsed.cards.map((c) => ({ ...c, sources: c.sources.filter((id) => idMap.has(id)).map((id) => idMap.get(id)) }));
+    const incoming = parsed.cards.map(({ _sourceUids, ...c }) => ({ ...c, sources: c.sources.filter((id) => idMap.has(id)).map((id) => idMap.get(id)) }));
     const { added: newCards, updated } = mergeCards(await store.listCards(), incoming);
     for (const c of newCards) await store.addCard(c);
     for (const c of updated) await store.putCard(c);
   }
-  return { added: parsed.entries.length, skipped: parsed.skipped };
+  return { added: added.length, skipped: parsed.skipped };
 }

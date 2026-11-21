@@ -6,6 +6,7 @@
   "description": "Englisch schreiben, bewerten lassen, besser werden.",
   "scripts": {
     "test": "node --test tests/",
+    "relay": "node server/relay.mjs",
     "serve": "node tools/serve.mjs"
   },
   "engines": { "node": ">=20" }
