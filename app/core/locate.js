@@ -4,7 +4,7 @@
 
 const APOS = /['’‘`]/;
 
-function pattern(quote) {
+export function pattern(quote) {
   let src = "";
   for (const part of quote.trim().split(/(\s+)/)) {
     if (!part) continue;

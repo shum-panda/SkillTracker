@@ -2,7 +2,7 @@
 import { completeJSON } from "./providers/index.js";
 import { badOutput } from "./providers/errors.js";
 import { ANALYSIS_SCHEMA, OCR_SCHEMA, validate } from "./schema.js";
-import { ANALYSIS_SYSTEM, OCR_SYSTEM, analysisPrompt, ocrPrompt, retryPrompt } from "./prompts.js";
+import { ANALYSIS_SYSTEM, JUDGE_SYSTEM, OCR_SYSTEM, analysisPrompt, judgePrompt, ocrPrompt, retryPrompt } from "./prompts.js";
 
 async function askValid(provider, req, deps) {
   let value;
@@ -36,4 +36,14 @@ export function analyze(provider, text, topic, deps = {}) {
   return askValid(provider, {
     system: ANALYSIS_SYSTEM, prompt: analysisPrompt(text, topic), schema: ANALYSIS_SCHEMA, schemaName: "writing_feedback",
   }, deps);
+}
+
+export const JUDGE_SCHEMA = {
+  type: "object", properties: { correct: { type: "boolean" }, feedback: { type: "string" } },
+  required: ["correct", "feedback"], additionalProperties: false,
+};
+
+// Ist die Variante des Lernenden auch richtig? (Überarbeiten, „KI fragen“)
+export function judgeRevision(provider, task, deps = {}) {
+  return askValid(provider, { system: JUDGE_SYSTEM, prompt: judgePrompt(task), schema: JUDGE_SCHEMA, schemaName: "revision_check" }, deps);
 }

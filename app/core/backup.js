@@ -3,6 +3,8 @@ import { ANALYSIS_SCHEMA, validate } from "./schema.js";
 import { AXES } from "./scores.js";
 import { PROVIDER_TYPES } from "./providers/index.js";
 import { entryThumbs, MAX_PAGES } from "./pages.js";
+import { categoryById } from "./taxonomy.js";
+import { OUTCOMES } from "./revision.js";
 
 const APP = "skilltracker";
 const VERSION = 1;
@@ -61,8 +63,23 @@ function cleanEntry(e) {
     metrics: Object.fromEntries(METRIC_KEYS.map((k) => [k, e.metrics[k]])),
     scores: Object.fromEntries(AXES.map((a) => [a.key, Math.max(0, Math.min(100, Math.round(e.scores[a.key])))])),
     model: { ocr: s(e.model?.ocr, 200), analysis: s(e.model?.analysis, 200) },
+    revisions: (Array.isArray(e.revisions) ? e.revisions : []).map(cleanRevision).filter(Boolean).slice(0, 50),
     schemaVersion: 1,
+    // nur für den Import: alte IDs, werden in applyImport auf neue umgeschrieben und dann entfernt
+    _oldId: Number.isInteger(e.id) ? e.id : null,
+    _revisionOf: Number.isInteger(e.revisionOf) ? e.revisionOf : null,
   };
+}
+
+function cleanRevision(r) {
+  if (!isObj(r) || !["steps", "whole"].includes(r.mode)) return null;
+  const created = new Date(r.createdAt);
+  if (Number.isNaN(created.getTime())) return null;
+  const tasks = (Array.isArray(r.tasks) ? r.tasks : []).filter((t) => isObj(t) && Number.isInteger(t.errorIndex)
+    && categoryById(t.category) && OUTCOMES.includes(t.outcome))
+    .map((t) => ({ errorIndex: t.errorIndex, category: t.category, outcome: t.outcome, answer: s(t.answer, 2000) }));
+  return { createdAt: created.toISOString(), mode: r.mode, tasks, revisedText: s(r.revisedText),
+    _resultOld: Number.isInteger(r.resultEntryId) ? r.resultEntryId : null };
 }
 
 export function parseImport(obj) {
@@ -90,6 +107,26 @@ export async function applyImport(store, parsed, { withKeys = false } = {}) {
     await store.setSetting("providers", [...byId.values()]);
   }
   for (const [k, v] of Object.entries(rest)) await store.setSetting(k, v);
-  for (const e of parsed.entries) await store.addEntry(e);
+  // Erst alle Einträge anlegen (neue IDs), dann Verweise zwischen Original und Überarbeitung umschreiben.
+  const idMap = new Map();
+  const added = [];
+  for (const e of parsed.entries) {
+    const { _oldId, _revisionOf, ...rest } = e;
+    const clean = { ...rest, revisions: rest.revisions.map(({ _resultOld, ...r }) => r) };
+    const id = await store.addEntry(clean);
+    if (_oldId !== null) idMap.set(_oldId, id);
+    added.push({ id, entry: e });
+  }
+  for (const { id, entry } of added) {
+    const links = entry._revisionOf !== null || entry.revisions.some((r) => r._resultOld !== null);
+    if (!links) continue;
+    const stored = await store.getEntry(id);
+    if (idMap.has(entry._revisionOf)) stored.revisionOf = idMap.get(entry._revisionOf);
+    stored.revisions = stored.revisions.map((r, i) => {
+      const old = entry.revisions[i]._resultOld;
+      return idMap.has(old) ? { ...r, resultEntryId: idMap.get(old) } : r;
+    });
+    await store.putEntry(stored);
+  }
   return { added: parsed.entries.length, skipped: parsed.skipped };
 }
