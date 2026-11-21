@@ -11,7 +11,7 @@ import { newSched } from "./srs.js";
 const APP = "skilltracker";
 const VERSION = 1;
 const METRIC_KEYS = ["words", "sentences", "mtld", "levelShare", "levelCounted", "avgLen", "subPerSentence"];
-const SETTING_KEYS = ["providers", "ocrProvider", "analysisProvider", "showImproved", "theme"];
+const SETTING_KEYS = ["providers", "ocrProvider", "analysisProvider", "showImproved", "theme", "newPerDay"];
 
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const s = (v, max = 100000) => (typeof v === "string" ? v.slice(0, max) : "");
@@ -67,6 +67,7 @@ function cleanSettings(raw) {
   for (const k of ["ocrProvider", "analysisProvider"]) if (typeof raw[k] === "string") out[k] = s(raw[k], 64);
   if (typeof raw.showImproved === "boolean") out.showImproved = raw.showImproved;
   if (["auto", "light", "dark"].includes(raw.theme)) out.theme = raw.theme;
+  if (Number.isInteger(raw.newPerDay) && raw.newPerDay >= 0 && raw.newPerDay <= 50) out.newPerDay = raw.newPerDay;
   return out;
 }
 

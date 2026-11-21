@@ -67,6 +67,12 @@ for (const scheme of ["light", "dark"]) {
     await shot(`${p}-history`);
     await js("location.hash = '#/new'");
     await shot(`${p}-new`);
+    await js("location.hash = '#/learn'");
+    await shot(`${p}-learn`);
+    await js("location.hash = '#/learn/session'");
+    await sleep(500);
+    await js("document.getElementById('flip')?.click()");
+    await shot(`${p}-session`);
     await js("location.hash = '#/settings'");
     await shot(`${p}-settings`);
   }

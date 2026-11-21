@@ -75,3 +75,14 @@ export function studiedNewToday(cards, now) {
   const base = startOfDay(now);
   return cards.filter((c) => c.sched?.firstStudied && startOfDay(new Date(c.sched.firstStudied)) === base).length;
 }
+
+// Wie lange bis zur nächsten Wiederholung, wenn man so bewertet („10 Min.“, „4 Tage“, „3 Mon.“).
+export function intervalLabel(s, grade, now = new Date()) {
+  const ms = time(schedule(s, grade, now).due) - now.getTime();
+  const d = ms / DAY;
+  if (ms < 60 * MIN) return `${Math.max(1, Math.round(ms / MIN))} Min.`;
+  if (d < 1) return `${Math.round(ms / (60 * MIN))} Std.`;
+  if (d < 31) return `${Math.round(d)} ${Math.round(d) === 1 ? "Tag" : "Tage"}`;
+  if (d < 365) return `${Math.round(d / 30)} Mon.`;
+  return `${(d / 365).toFixed(1).replace(".", ",")} J.`;
+}

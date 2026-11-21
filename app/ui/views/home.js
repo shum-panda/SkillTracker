@@ -2,6 +2,7 @@
 import { AXES, averageScores } from "../../core/scores.js";
 import { esc, fmtDate } from "../dom.js";
 import { radarSvg } from "../charts.js";
+import { learnSummary } from "./learn.js";
 
 export function entryListHtml(entries) {
   return `<ul class="entries">${entries.map((e) => `<li><a href="#/e/${e.id}">
@@ -42,11 +43,16 @@ export async function render(root, ctx) {
   }
   const recent = entries.slice(0, 5);
   const avg = averageScores(recent);
+  const learnState = await learnSummary(ctx).catch(() => null);
+  const toLearn = learnState ? learnState.due + learnState.fresh : 0;
   root.innerHTML = `
     <div class="head row between">
       <div><p class="kicker">Übersicht</p><h1>Deine Form</h1></div>
       <a class="btn primary" href="#/new">Neuer Text</a>
     </div>
+    ${toLearn ? `<section class="card due-banner"><div><b>${toLearn} ${toLearn === 1 ? "Karte" : "Karten"} heute</b>
+      <span class="small muted"> · ${learnState.due} fällig, ${learnState.fresh} neu</span></div>
+      <a class="btn" href="#/learn/session">Jetzt lernen</a></section>` : ""}
     <div class="grid side">
       <section class="card">
         <div class="radar-wrap">${radarSvg(AXES, avg, null, { title: "Schnitt der letzten Texte" })}</div>

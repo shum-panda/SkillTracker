@@ -6,6 +6,7 @@ import { tokenize } from "../../core/text.js";
 import { esc, spinner } from "../dom.js";
 import { prepareImage } from "../image.js";
 import { renderEntry } from "./entry.js";
+import { syncCards } from "../../core/cards.js";
 import { addPages, entryThumbs, joinPages, MAX_PAGES, movePage, removePage } from "../../core/pages.js";
 
 const errorText = (e) => esc(e?.message || String(e)) + (e?.detail ? `<br><span class="small muted">${esc(e.detail)}</span>` : "");
@@ -248,6 +249,7 @@ async function runAnalysis(ctx, store, provider, ocr, snap, job) {
   try {
     id = await store.addEntry(entry);
     await store.setSetting("draft", null);
+    await syncCards(store, [{ ...entry, id }]).catch(() => {}); // Karteikarten aus Lücken und Wortschatz-Fehlern
   } catch (e) {
     // Nicht gespeichert: Ergebnis trotzdem zeigen, Entwurf bleibt.
     running = null;

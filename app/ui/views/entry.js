@@ -98,7 +98,7 @@ export async function renderEntry(root, ctx, e, all, { unsaved = false } = {}) {
         <h2>Fehlende Wörter (${a.gaps.length})</h2>
         ${a.gaps.length ? `<ul class="gap-list">${a.gaps.map((g) => `<li><span class="de">${esc(g.written)}</span> → <span class="en">${esc(g.english)}</span>
           ${g.note ? `<span class="small muted">${esc(g.note)}</span>` : ""}</li>`).join("")}</ul>
-          <p class="small muted">Diese Wörter werden später automatisch zu Karteikarten.</p>`
+          <p class="small muted">Daraus sind Karteikarten geworden – <a href="#/learn">jetzt lernen</a>.</p>`
           : '<p class="muted">Keine – oder du hast keine deutschen Platzhalter benutzt.</p>'}
       </section>
     </div>

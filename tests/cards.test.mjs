@@ -137,3 +137,15 @@ test("Speicher und Sicherung: Karten werden exportiert, geprüft importiert, Que
   await t.deleteCard(imported.id);
   assert.equal((await t.listCards()).length, 0);
 });
+
+import { intervalLabel } from "../app/core/srs.js";
+
+test("intervalLabel: lesbare Abstände für die Bewertungsknöpfe", () => {
+  assert.equal(intervalLabel(newSched(), "again", NOW), "1 Min.");
+  assert.equal(intervalLabel(newSched(), "good", NOW), "10 Min.");
+  assert.equal(intervalLabel(newSched(), "easy", NOW), "4 Tage");
+  const r = { state: "review", step: 0, due: NOW.toISOString(), interval: 40, ease: 2.5, reps: 3, lapses: 0, firstStudied: "x" };
+  assert.equal(intervalLabel(r, "good", NOW), "3 Mon.");
+  assert.equal(intervalLabel({ ...r, interval: 1, ease: 1.3 }, "hard", NOW), "2 Tage");
+  assert.equal(intervalLabel({ ...r, interval: 200 }, "good", NOW), "1,4 J.");
+});

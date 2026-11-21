@@ -10,6 +10,10 @@ import * as entry from "./views/entry.js";
 import * as revise from "./views/revise.js";
 import * as historyView from "./views/history.js";
 import * as settings from "./views/settings.js";
+import * as learn from "./views/learn.js";
+import { syncCards } from "../core/cards.js";
+
+const learnSession = { render: learn.renderSession };
 
 const root = document.getElementById("app");
 const banner = document.getElementById("banner");
@@ -70,7 +74,9 @@ async function openStore() {
 async function enterDemo() {
   const freq = await loadFreq();
   const store = new MemoryStore();
-  for (const e of demoEntries(freq)) await store.putEntry(e);
+  const entries = demoEntries(freq);
+  for (const e of entries) await store.putEntry(e);
+  await syncCards(store, entries);
   ctx.realStore ??= ctx.store;
   ctx.store = store;
   ctx.demo = true;
@@ -90,6 +96,8 @@ const ROUTES = [
   [/^#\/e\/(\d+)$/, entry, ""],
   [/^#\/history$/, historyView, "history"],
   [/^#\/settings$/, settings, "settings"],
+  [/^#\/learn$/, learn, "learn"],
+  [/^#\/learn\/session$/, learnSession, "learn"],
 ];
 
 let renderSeq = 0;
