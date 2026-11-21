@@ -149,3 +149,45 @@ test("intervalLabel: lesbare Abstände für die Bewertungsknöpfe", () => {
   assert.equal(intervalLabel({ ...r, interval: 1, ease: 1.3 }, "hard", NOW), "2 Tage");
   assert.equal(intervalLabel({ ...r, interval: 200 }, "good", NOW), "1,4 J.");
 });
+
+import { dueDayIndex } from "../app/core/srs.js";
+
+test("Gelöschte Karten werden nicht wieder erzeugt", async () => {
+  const s = new MemoryStore();
+  await s.setSetting("deletedCardKeys", ["gap|farmers' market"]);
+  const { syncCards } = await import("../app/core/cards.js");
+  const n = await syncCards(s, [entry]);
+  assert.equal(n, 2);
+  assert.ok(!(await s.listCards()).some((c) => c.back === "farmers' market"));
+  const { added } = mergeCards([], cardsFromEntry(entry, NOW), new Set(["vocab|take a photo"]));
+  assert.equal(added.length, 2);
+});
+
+test("Gleichzeitiges Synchronisieren erzeugt keine Doppelten", async () => {
+  const s = new MemoryStore();
+  const { syncCards } = await import("../app/core/cards.js");
+  await Promise.all([syncCards(s, [entry]), syncCards(s, [entry]), syncCards(s, [{ ...entry, id: 6 }])]);
+  const cards = await s.listCards();
+  assert.equal(cards.length, 3);
+  assert.deepEqual(cards[0].sources, [5, 6]);
+});
+
+test("Lerntag beginnt um 4 Uhr: abends gelernt, morgens wieder fällig", () => {
+  const evening = new Date(2026, 10, 21, 21, 0);
+  const s = schedule({ ...newSched(), state: "learning", step: 1 }, "good", evening); // → 1 Tag
+  const morning = new Date(2026, 10, 22, 8, 0);
+  const card = { id: 1, suspended: false, sched: s };
+  assert.equal(buildQueue([card], morning).due.length, 1, "am nächsten Morgen fällig");
+  assert.equal(buildQueue([card], new Date(2026, 10, 22, 2, 0)).due.length, 0, "um 2 Uhr nachts noch nicht");
+  assert.equal(dueDayIndex(s.due, morning), 0);
+  assert.equal(dueDayIndex(s.due, evening), 1);
+  assert.deepEqual(forecast([card], morning, 2), [1, 0]);
+  const lateNight = [{ sched: { firstStudied: new Date(2026, 10, 21, 22, 0).toISOString() } }];
+  assert.equal(studiedNewToday(lateNight, new Date(2026, 10, 22, 0, 30)), 1, "nach Mitternacht noch derselbe Lerntag");
+  assert.equal(studiedNewToday(lateNight, new Date(2026, 10, 22, 9, 0)), 0);
+});
+
+test("Leicht gibt immer mehr als Gut", () => {
+  const r = { state: "review", step: 0, due: NOW.toISOString(), interval: 1, ease: 2.5, reps: 3, lapses: 0, firstStudied: "x" };
+  assert.ok(schedule(r, "easy", NOW).interval > schedule(r, "good", NOW).interval);
+});

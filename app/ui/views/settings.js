@@ -174,6 +174,7 @@ export async function render(root, ctx) {
       const withKeys = parsed.hasKeys && (await confirmDialog("Schlüssel übernehmen?",
         "Die Sicherung enthält API-Schlüssel. Nur übernehmen, wenn die Datei von dir stammt.", { ok: "Übernehmen" }));
       const r = await applyImport(ctx.store, parsed, { withKeys });
+      ctx.cardsSync = null; // Karten aus importierten Texten beim nächsten Öffnen nachtragen
       ctx.toast(`${r.added} Texte importiert${r.skipped ? `, ${r.skipped} unbrauchbare übersprungen` : ""}.`);
       rerender();
     } catch (e) {
@@ -184,6 +185,7 @@ export async function render(root, ctx) {
     if (!(await confirmDialog("Alles löschen?", "Alle Texte, Bewertungen und Schlüssel auf diesem Gerät werden gelöscht. Das lässt sich nicht rückgängig machen.",
       { ok: "Alles löschen", danger: true }))) return;
     await ctx.store.clearAll();
+    ctx.cardsSync = null;
     await ctx.applyTheme();
     ctx.toast("Alles gelöscht.");
     ctx.navigate("#/");

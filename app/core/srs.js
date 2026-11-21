@@ -32,23 +32,50 @@ export function schedule(s, grade, now = new Date()) {
     interval = Math.round(n.interval * 1.2);
     ease = Math.max(1.3, round2(n.ease - 0.15));
   } else if (grade === "easy") {
-    interval = Math.round(n.interval * n.ease * 1.3);
-    ease = round2(n.ease + 0.15);
+    const good = Math.max(n.interval + 1, Math.round(n.interval * n.ease));
+    interval = Math.max(good + 1, Math.round(n.interval * n.ease * 1.3));
+    ease = Math.min(MAX_EASE, round2(n.ease + 0.15));
   } else {
     interval = Math.round(n.interval * n.ease);
   }
-  interval = Math.max(n.interval + 1, interval);
+  interval = Math.min(MAX_INTERVAL, Math.max(n.interval + 1, interval));
   return { ...n, interval, ease, due: at(now, interval * DAY) };
 }
 
+const MAX_EASE = 5;
+const MAX_INTERVAL = 36500;
 const active = (c) => !c.suspended && c.sched;
 const time = (iso) => new Date(iso).getTime();
 
+// Ein Lerntag beginnt um 4 Uhr (wie bei Anki): Wer nach Mitternacht lernt, ist noch im alten Tag.
+const DAY_STARTS_AT = 4;
+function learningDayStart(d) {
+  const s = new Date(d.getFullYear(), d.getMonth(), d.getDate(), DAY_STARTS_AT);
+  if (d.getTime() < s.getTime()) s.setDate(s.getDate() - 1);
+  return s;
+}
+const nextDayStart = (s) => new Date(s.getFullYear(), s.getMonth(), s.getDate() + 1, DAY_STARTS_AT).getTime();
+
+// In wie vielen Lerntagen eine Karte dran ist (0 = heute, auch überfällig).
+export function dueDayIndex(due, now) {
+  let start = learningDayStart(now);
+  const t = time(due);
+  let i = 0;
+  while (t >= nextDayStart(start) && i < 400) {
+    start = new Date(nextDayStart(start));
+    i++;
+  }
+  return i;
+}
+
 // Was heute in die Sitzung kommt: fällige (lernende zuerst), neue bis zum Tageslimit, lernende bald fällige (vorziehbar).
+// Wiederholungen sind fällig, sobald ihr Lerntag begonnen hat; lernende Karten erst zur genauen Zeit.
 export function buildQueue(cards, now, { newPerDay = DEFAULT_NEW_PER_DAY, newToday = 0 } = {}) {
   const t = now.getTime();
+  const endOfDay = nextDayStart(learningDayStart(now));
   const list = cards.filter(active);
-  const due = list.filter((c) => c.sched.state !== "new" && c.sched.due && time(c.sched.due) <= t)
+  const isDue = (c) => c.sched.due && (c.sched.state === "review" ? time(c.sched.due) < endOfDay : time(c.sched.due) <= t);
+  const due = list.filter((c) => c.sched.state !== "new" && isDue(c))
     .sort((a, b) => (a.sched.state === "learning" ? 0 : 1) - (b.sched.state === "learning" ? 0 : 1) || time(a.sched.due) - time(b.sched.due));
   const fresh = list.filter((c) => c.sched.state === "new").sort((a, b) => a.id - b.id)
     .slice(0, Math.max(0, newPerDay - newToday));
@@ -57,23 +84,20 @@ export function buildQueue(cards, now, { newPerDay = DEFAULT_NEW_PER_DAY, newTod
   return { due, fresh, ahead };
 }
 
-const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-
-// Wie viele Karten an den nächsten n Tagen fällig werden (Tag 0 = heute inkl. Überfälliger).
+// Wie viele Karten an den nächsten n Lerntagen fällig werden (Tag 0 = heute inkl. Überfälliger).
 export function forecast(cards, now, n = 7) {
   const out = Array(n).fill(0);
-  const base = startOfDay(now);
   for (const c of cards.filter(active)) {
     if (c.sched.state === "new" || !c.sched.due) continue;
-    const d = Math.max(0, Math.floor((time(c.sched.due) - base) / DAY));
+    const d = dueDayIndex(c.sched.due, now);
     if (d < n) out[d]++;
   }
   return out;
 }
 
 export function studiedNewToday(cards, now) {
-  const base = startOfDay(now);
-  return cards.filter((c) => c.sched?.firstStudied && startOfDay(new Date(c.sched.firstStudied)) === base).length;
+  const base = learningDayStart(now).getTime();
+  return cards.filter((c) => c.sched?.firstStudied && learningDayStart(new Date(c.sched.firstStudied)).getTime() === base).length;
 }
 
 // Wie lange bis zur nächsten Wiederholung, wenn man so bewertet („10 Min.“, „4 Tage“, „3 Mon.“).

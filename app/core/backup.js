@@ -11,7 +11,7 @@ import { newSched } from "./srs.js";
 const APP = "skilltracker";
 const VERSION = 1;
 const METRIC_KEYS = ["words", "sentences", "mtld", "levelShare", "levelCounted", "avgLen", "subPerSentence"];
-const SETTING_KEYS = ["providers", "ocrProvider", "analysisProvider", "showImproved", "theme", "newPerDay"];
+const SETTING_KEYS = ["providers", "ocrProvider", "analysisProvider", "showImproved", "theme", "newPerDay", "deletedCardKeys"];
 
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const s = (v, max = 100000) => (typeof v === "string" ? v.slice(0, max) : "");
@@ -37,7 +37,7 @@ const iso = (v) => {
 function cleanSched(x) {
   if (!isObj(x) || !["new", "learning", "review"].includes(x.state)) return newSched();
   const num = (v, d, lo, hi) => (Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
-  return { state: x.state, step: num(x.step, 0, 0, 1), due: iso(x.due), interval: num(x.interval, 0, 0, 36500),
+  return { state: x.state, step: num(x.step, 0, 0, 1), due: iso(x.due) || (x.state === "new" ? null : new Date().toISOString()), interval: num(x.interval, 0, 0, 36500),
     ease: num(x.ease, 2.5, 1.3, 5), reps: num(x.reps, 0, 0, 1e6), lapses: num(x.lapses, 0, 0, 1e6), firstStudied: iso(x.firstStudied) };
 }
 
@@ -68,6 +68,7 @@ function cleanSettings(raw) {
   if (typeof raw.showImproved === "boolean") out.showImproved = raw.showImproved;
   if (["auto", "light", "dark"].includes(raw.theme)) out.theme = raw.theme;
   if (Number.isInteger(raw.newPerDay) && raw.newPerDay >= 0 && raw.newPerDay <= 50) out.newPerDay = raw.newPerDay;
+  if (Array.isArray(raw.deletedCardKeys)) out.deletedCardKeys = raw.deletedCardKeys.filter((k) => typeof k === "string" && k.length < 600).slice(-5000);
   return out;
 }
 

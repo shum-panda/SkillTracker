@@ -1,7 +1,7 @@
 // Lernen: Lernplan (heute fällig, Vorschau), Kartenliste, eigene Karten, und die Lernsitzung.
-import { makeCard, syncCards } from "../../core/cards.js";
+import { cardKey, deleteCard, makeCard, syncCards } from "../../core/cards.js";
 import { locateErrors } from "../../core/locate.js";
-import { buildQueue, DEFAULT_NEW_PER_DAY, forecast, intervalLabel, schedule, studiedNewToday } from "../../core/srs.js";
+import { buildQueue, DEFAULT_NEW_PER_DAY, dueDayIndex, forecast, intervalLabel, schedule, studiedNewToday } from "../../core/srs.js";
 import { closeModal, confirmDialog, esc, openModal } from "../dom.js";
 import { highlightHtml } from "../highlight.js";
 
@@ -15,10 +15,17 @@ async function newPerDay(store) {
 }
 
 // Karten aus allen Texten nachtragen – einmal je Speicher und Sitzung.
-async function ensureCards(ctx) {
-  if (ctx.cardsSyncedFor === ctx.store) return;
-  await syncCards(ctx.store, await ctx.store.listEntries());
-  ctx.cardsSyncedFor = ctx.store;
+// Das Versprechen wird sofort gemerkt: Zwei Aufrufe gleichzeitig teilen sich einen Lauf.
+function ensureCards(ctx) {
+  if (ctx.cardsSyncedFor !== ctx.store || !ctx.cardsSync) {
+    const store = ctx.store;
+    ctx.cardsSyncedFor = store;
+    ctx.cardsSync = store.listEntries().then((entries) => syncCards(store, entries)).catch((e) => {
+      if (ctx.cardsSyncedFor === store) ctx.cardsSync = null; // beim nächsten Mal erneut versuchen
+      throw e;
+    });
+  }
+  return ctx.cardsSync;
 }
 
 export async function learnSummary(ctx) {
@@ -50,8 +57,8 @@ function forecastSvg(counts, now) {
 function dueText(c, now) {
   if (c.suspended) return "pausiert";
   if (c.sched.state === "new") return "neu";
-  const d = Math.round((new Date(c.sched.due).getTime() - now.getTime()) / 86400000);
-  if (d <= 0) return "fällig";
+  const d = dueDayIndex(c.sched.due, now);
+  if (d <= 0) return c.sched.state === "learning" && new Date(c.sched.due) > now ? "gleich wieder" : "heute";
   return d === 1 ? "morgen" : `in ${d} Tagen`;
 }
 
@@ -74,7 +81,10 @@ function editCard(ctx, card, onSaved) {
       dlg.querySelector("#cf-status").innerHTML = '<p class="note">Vorder- und Rückseite ausfüllen.</p>';
       return;
     }
-    if (card) await ctx.store.putCard({ ...card, front: v("cf-front"), back: v("cf-back"), context: v("cf-context"), note: v("cf-note") });
+    if (card) {
+      const edited = { ...card, front: v("cf-front"), back: v("cf-back"), context: v("cf-context"), note: v("cf-note") };
+      await ctx.store.putCard({ ...edited, key: cardKey(edited) });
+    }
     else await ctx.store.addCard(makeCard({ type: "manual", front: v("cf-front"), back: v("cf-back"), context: v("cf-context"), note: v("cf-note") }));
     closeModal();
     onSaved();
@@ -145,14 +155,22 @@ export async function render(root, ctx) {
   }
   for (const b of root.querySelectorAll("[data-del]")) {
     b.onclick = async () => {
-      if (!(await confirmDialog("Karte löschen?", "Sie wird nicht wieder erzeugt, solange es eine Karte mit diesem Wort gibt – sonst beim nächsten Text vielleicht schon.", { ok: "Löschen", danger: true }))) return;
-      await store.deleteCard(Number(b.dataset.del));
+      if (!(await confirmDialog("Karte löschen?", "Die Karte wird gelöscht und auch aus späteren Texten nicht wieder erzeugt.", { ok: "Löschen", danger: true }))) return;
+      await deleteCard(store, byId(b.dataset.del));
       rerender();
     };
   }
 }
 
 // ---------- Lernsitzung ----------
+
+// Beispielsatz mit Lücke: bei Lücken-Karten schon so gespeichert; bei eigenen Karten die Rückseite (als ganzes Wort) ersetzen.
+function clozeOf(c) {
+  const ctx = String(c.context || "");
+  if (!ctx || ctx.includes("____")) return ctx;
+  const hit = locateErrors(ctx, [{ quote: c.back }])[0];
+  return hit ? ctx.slice(0, hit.start) + "____" + ctx.slice(hit.end) : ctx;
+}
 
 function frontHtml(c) {
   if (c.type === "gap") {
@@ -164,16 +182,31 @@ function frontHtml(c) {
     return `<p class="kicker">Was passt hier besser?</p>
       <p class="flash-context" lang="en">${c.context ? highlightHtml(c.context, spans, [{ category: "word_choice" }]) : esc(c.front)}</p>`;
   }
-  return `<p class="flash-word">${esc(c.front)}</p>${c.context ? `<p class="flash-context">${esc(c.context.replace(c.back, "____"))}</p>` : ""}`;
+  return `<p class="flash-word">${esc(c.front)}</p>${c.context ? `<p class="flash-context">${esc(clozeOf(c))}</p>` : ""}`;
 }
 
 function backHtml(c) {
-  const filled = c.context && c.type === "gap" ? `<p class="flash-context" lang="en">${esc(c.context).replace("____", `<b>${esc(c.back)}</b>`)}</p>` : "";
+  const cloze = c.type === "vocab" ? "" : clozeOf(c);
+  const filled = cloze.includes("____")
+    ? `<p class="flash-context" lang="en">${cloze.split("____").map(esc).join(`<b>${esc(c.back)}</b>`)}</p>` : "";
   return `<hr class="sep"><p class="flash-answer" lang="en">${c.type === "vocab" ? `<del>${esc(c.front)}</del> → ` : ""}<ins>${esc(c.back)}</ins></p>
     ${filled}${c.note ? `<p class="small muted">${esc(c.note)}</p>` : ""}`;
 }
 
 export async function renderSession(root, ctx) {
+  // Tastatur sofort anmelden; der Handler meldet sich selbst ab, sobald die Ansicht nicht mehr angezeigt wird.
+  let keyHandler = null;
+  let wasShown = false;
+  const onKey = (ev) => {
+    if (root.isConnected) wasShown = true;
+    else {
+      if (wasShown) document.removeEventListener("keydown", onKey);
+      return;
+    }
+    if (document.getElementById("modal")?.open || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    keyHandler?.(ev);
+  };
+  document.addEventListener("keydown", onKey);
   await ensureCards(ctx);
   const store = ctx.store;
   const now = new Date();
@@ -192,6 +225,7 @@ export async function renderSession(root, ctx) {
 
   const show = (card) => {
     if (!card) {
+      keyHandler = null;
       root.innerHTML = `<div class="head"><p class="kicker">Lernen</p><h1>Fertig für jetzt</h1>
         <p>${done ? `${done} ${done === 1 ? "Karte" : "Karten"} wiederholt.` : "Gerade ist nichts fällig."} Morgen geht's weiter.</p></div>
         <div class="row"><a class="btn primary" href="#/learn">Zum Lernplan</a><a class="btn" href="#/new">Neuen Text schreiben</a></div>`;
@@ -243,9 +277,5 @@ export async function renderSession(root, ctx) {
     };
   };
 
-  let keyHandler = null;
-  const onKey = (ev) => keyHandler?.(ev);
-  document.addEventListener("keydown", onKey);
-  window.addEventListener("hashchange", () => document.removeEventListener("keydown", onKey), { once: true });
   show(nextCard());
 }

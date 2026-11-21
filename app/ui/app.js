@@ -60,11 +60,16 @@ ctx.loadFreq = loadFreq;
 function showBanner(html) {
   banner.innerHTML = html;
   banner.hidden = !html;
+  banner.querySelector("#reload")?.addEventListener("click", () => location.reload());
 }
 
 async function openStore() {
   try {
-    ctx.store = await IdbStore.open();
+    ctx.store = await IdbStore.open("skilltracker", {
+      onBlocked: () => showBanner("<span>SkillTracker ist noch in einem anderen Tab oder Fenster offen (alte Version). Bitte dort schließen – dann geht es hier weiter.</span>"),
+      onVersionChange: () => showBanner('<span>Es gibt eine neue Version von SkillTracker.</span><button class="btn small" id="reload">Neu laden</button>'),
+    });
+    showBanner("");
   } catch {
     ctx.store = new MemoryStore();
     showBanner("<span>Dieser Browser erlaubt hier keinen Speicher (privates Fenster?). Texte gehen beim Schließen verloren.</span>");

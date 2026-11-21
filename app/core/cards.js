@@ -57,11 +57,13 @@ export function cardsFromEntry(entry, now = new Date()) {
 
 // existing: gespeicherte Karten (mit id). incoming: neue Kandidaten.
 // → added: wirklich neue Karten, updated: vorhandene Karten mit ergänzten Quellen.
-export function mergeCards(existing, incoming) {
+// deleted: Schlüssel bewusst gelöschter Karten – die werden nicht wieder erzeugt.
+export function mergeCards(existing, incoming, deleted = new Set()) {
   const byKey = new Map(existing.map((c) => [c.key, c]));
   const added = [];
   const updated = new Map();
   for (const c of incoming) {
+    if (deleted.has(c.key)) continue;
     const have = byKey.get(c.key);
     if (!have) {
       byKey.set(c.key, c);
@@ -77,11 +79,27 @@ export function mergeCards(existing, incoming) {
 }
 
 // Neue Karten eines Eintrags speichern (beim Bewerten und beim Nachtragen).
-export async function syncCards(store, entries, now = new Date()) {
-  const existing = await store.listCards();
-  const incoming = entries.flatMap((e) => cardsFromEntry(e, now));
-  const { added, updated } = mergeCards(existing, incoming);
-  for (const c of added) await store.addCard(c);
-  for (const c of updated) await store.putCard(c);
-  return added.length;
+// Läufe werden hintereinander ausgeführt, damit sich zwei gleichzeitige nicht gegenseitig doppelte Karten anlegen.
+let chain = Promise.resolve();
+export function syncCards(store, entries, now = new Date()) {
+  const run = chain.then(async () => {
+    const existing = await store.listCards();
+    const deleted = new Set((await store.getSetting("deletedCardKeys")) || []);
+    const incoming = entries.flatMap((e) => cardsFromEntry(e, now));
+    const { added, updated } = mergeCards(existing, incoming, deleted);
+    for (const c of added) await store.addCard(c);
+    for (const c of updated) await store.putCard(c);
+    return added.length;
+  });
+  chain = run.catch(() => {});
+  return run;
+}
+
+// Karte löschen und merken, damit sie nicht wieder erzeugt wird.
+export async function deleteCard(store, card) {
+  await store.deleteCard(card.id);
+  if (card.type === "manual") return;
+  const keys = new Set((await store.getSetting("deletedCardKeys")) || []);
+  keys.add(card.key);
+  await store.setSetting("deletedCardKeys", [...keys].slice(-5000));
 }

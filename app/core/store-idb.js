@@ -9,7 +9,9 @@ export class IdbStore {
     this.persistent = true;
   }
 
-  static open(name = "skilltracker") {
+  // onBlocked: ein anderer Tab mit alter Version hält die Datenbank offen – wir warten (kein Rückfall auf Arbeitsspeicher).
+  // onVersionChange: eine neuere Version will aktualisieren – diese Verbindung schließt sich und bittet um Neuladen.
+  static open(name = "skilltracker", { onBlocked = () => {}, onVersionChange = () => {} } = {}) {
     return new Promise((resolve, reject) => {
       if (!globalThis.indexedDB) return reject(new Error("IndexedDB nicht verfügbar"));
       const r = indexedDB.open(name, 2); // 2: Karteikarten
@@ -23,9 +25,16 @@ export class IdbStore {
           db.createObjectStore("cards", { keyPath: "id", autoIncrement: true }).createIndex("key", "key");
         }
       };
-      r.onsuccess = () => resolve(new IdbStore(r.result));
+      r.onsuccess = () => {
+        const db = r.result;
+        db.onversionchange = () => {
+          db.close();
+          onVersionChange();
+        };
+        resolve(new IdbStore(db));
+      };
       r.onerror = () => reject(r.error);
-      r.onblocked = () => reject(new Error("Datenbank ist in einem anderen Tab blockiert"));
+      r.onblocked = () => onBlocked();
     });
   }
 
