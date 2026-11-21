@@ -22,17 +22,19 @@ function rate(entries, id) {
   let words = 0;
   for (const e of entries) {
     errs += counts(e).get(id) || 0;
-    words += Math.max(1, e.metrics?.words || 0);
+    words += e.metrics.words;
   }
   return words ? (errs * 100) / words : 0;
 }
 
 export function weaknessProfile(allEntries, drills = []) {
-  const entries = [...allEntries].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, RECENT_TEXTS);
+  // Nur bewertete Texte mit Wortzahl zählen.
+  const entries = [...allEntries].filter((e) => e?.analysis && (e.metrics?.words || 0) > 0)
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, RECENT_TEXTS);
   if (!entries.length) return [];
   const perEntry = entries.map(counts);
   const weights = entries.map((_, i) => DECAY ** i);
-  const wordWeight = entries.reduce((s, e, i) => s + weights[i] * (Math.max(1, e.metrics?.words || 0) / 100), 0);
+  const wordWeight = entries.reduce((s, e, i) => s + weights[i] * (e.metrics.words / 100), 0);
   const chrono = [...entries].reverse();
   const half = Math.floor(chrono.length / 2);
 
@@ -44,16 +46,19 @@ export function weaknessProfile(allEntries, drills = []) {
     let errorCount = 0;
     for (const e of entries) errorCount += (e.analysis?.errors || []).filter((x) => x.category === c.id).length;
     let touched = errorCount > 0;
-    for (const e of entries) {
+    // Überarbeiten: wie die Fehler gewichtet (Alter) und auf 100 Wörter bezogen; gutes Lösen halbiert höchstens.
+    let adj = 0;
+    entries.forEach((e, i) => {
       for (const r of e.revisions || []) {
         for (const t of r.tasks || []) {
           if (t.category !== c.id) continue;
-          if (t.outcome === "shown" || t.outcome === "skipped") { score += 0.5; touched = true; }
-          if (t.outcome === "solo") score -= 0.3;
+          if (t.outcome === "shown" || t.outcome === "skipped") { adj += 0.5 * weights[i]; touched = true; }
+          if (t.outcome === "solo") adj -= 0.3 * weights[i];
         }
       }
-    }
-    score = Math.max(0, score);
+    });
+    adj = wordWeight ? adj / wordWeight : 0;
+    score = adj >= 0 ? score + adj : Math.max(score / 2, score + adj);
     const mine = drills.filter((d) => d.category === c.id).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     const recent = mine.slice(0, 3);
     if (recent.length) {
@@ -66,7 +71,7 @@ export function weaknessProfile(allEntries, drills = []) {
     if (half >= 2) {
       const older = rate(chrono.slice(0, half), c.id);
       const newer = rate(chrono.slice(half), c.id);
-      if (newer < older * 0.7) trend = "better";
+      if (newer < older * 0.7 && older - newer > 0.2) trend = "better";
       else if (newer > older * 1.3 && newer - older > 0.2) trend = "worse";
     }
     out.push({ id: c.id, label: c.label, group: c.group, tip: c.tip, score, errorCount, trend, lastDrill: mine[0] || null });

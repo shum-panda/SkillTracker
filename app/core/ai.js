@@ -57,7 +57,7 @@ export async function generateDrill(provider, { category, level, examples = [], 
     system: DRILL_SYSTEM, schema: DRILL_SCHEMA, schemaName: "grammar_drill",
     prompt: drillPrompt({ category, label: c?.label || category, tip: c?.tip || "", level, examples: examples.slice(0, 3), topics: topics.slice(0, 5), count }),
   }, deps);
-  const list = cleanDrill(raw);
+  const list = cleanDrill(raw, { category });
   if (list.length < 3) throw badOutput(`${provider.model}: nur ${list.length} brauchbare Übungen`);
   return list;
 }

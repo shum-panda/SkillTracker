@@ -51,7 +51,7 @@ test("Eigene Übungen aus Fehlern einer Kategorie", () => {
   const ex = ownExercises(entries, "past_simple", 3);
   assert.equal(ex.length, 3);
   assert.deepEqual(ex[0], { type: "fix", source: "own", instruction: "Verbessere den Satz.", prompt: "Yesterday I go home.",
-    options: [], answer: "Yesterday I went home.", accept: [], explanation: "Regel." });
+    options: [], answer: "Yesterday I went home.", accept: [], explanation: "Regel.", quote: "I go", correction: "I went" });
   assert.equal(ex[2].prompt, "Last year we live here.");
   assert.equal(ownExercises(entries, "article").length, 0);
 });
@@ -110,4 +110,45 @@ test("Sicherung: Übungsergebnisse werden geprüft übernommen", () => {
     { createdAt: "2026-11-20T10:00:00Z", category: "article", total: 2, correct: 5 },
   ] } });
   assert.equal(parsed.settings.drills.length, 1);
+});
+
+test("Prüfung C1/I2: eigener Satz ist der mit dem Fehler; mehrere Fehler im Satz stören nicht", () => {
+  const entries = [entry(1, 0, "This is my house. The dogs is happy and he go home.",
+    [E("dogs is", "dogs are", "subject_verb_agreement"), E("he go", "he goes", "subject_verb_agreement")])];
+  const ex = ownExercises(entries, "subject_verb_agreement", 3);
+  assert.equal(ex.length, 1, "beide Fehler im selben Satz → eine Übung");
+  assert.equal(ex[0].prompt, "The dogs is happy and he go home.");
+  assert.equal(ex[0].answer, "The dogs are happy and he go home.");
+  assert.equal(checkExercise(ex[0], "The dogs are happy and he goes home.", "subject_verb_agreement"), true, "alles verbessert = richtig");
+  assert.equal(checkExercise(ex[0], "The dogs are happy and he go home.", "subject_verb_agreement"), true);
+  assert.equal(checkExercise(ex[0], "The dogs is happy and he goes home.", "subject_verb_agreement"), false);
+});
+
+test("Prüfung I3: Groß/klein-Runden behalten fix-Übungen; doppelte Optionen und Mehrfachlücken raus", () => {
+  const fix = { type: "fix", instruction: "x", prompt: "on monday i go.", options: [], answer: "On Monday I go.", accept: [], explanation: "" };
+  assert.equal(cleanDrill({ exercises: [fix] }, { category: "capitalization" }).length, 1);
+  assert.equal(cleanDrill({ exercises: [fix] }, { category: "article" }).length, 0);
+  const ch = { type: "choose", instruction: "x", prompt: "I ___ it.", options: ["Like", "like", "likes"], answer: "like", accept: ["likes"], explanation: "" };
+  const out = cleanDrill({ exercises: [ch] });
+  assert.equal(out[0].options.length, 2);
+  assert.deepEqual(out[0].accept, [], "Ablenker nicht als erlaubte Antwort");
+  const twoGaps = { type: "fill", instruction: "x", prompt: "She ___ and ___ (go).", options: [], answer: "goes", accept: [], explanation: "" };
+  assert.equal(cleanDrill({ exercises: [twoGaps] }).length, 0);
+});
+
+test("Prüfung I5 und Kleinkram: Überarbeiten-Bonus skaliert, Einträge ohne Analyse zählen nicht, besser braucht Mindestabstand", () => {
+  const long = entry(1, 0, "x", [E("a", "b", "past_simple")], 400,
+    [{ mode: "steps", tasks: [{ category: "past_simple", outcome: "shown" }] }]);
+  const p = weaknessProfile([long], []).find((x) => x.id === "past_simple");
+  assert.ok(Math.abs(p.score - (0.25 + 0.125)) < 1e-9, "Bonus 0,5 auf 100 Wörter → bei 400 Wörtern 0,125");
+  const solo = entry(2, 0, "x", [E("a", "b", "article"), E("c", "d", "article")], 100,
+    [{ mode: "steps", tasks: Array(10).fill({ category: "article", outcome: "solo" }) }]);
+  assert.ok(weaknessProfile([solo], []).find((x) => x.id === "article").score >= 1, "höchstens halbiert");
+  const noAnalysis = { id: 9, createdAt: "2026-11-22T10:00:00Z", text: "x" };
+  assert.equal(weaknessProfile([noAnalysis, long], []).find((x) => x.id === "past_simple").score, p.score);
+});
+
+test("Bewertungs-Prompt verlangt eindeutige Zitate", async () => {
+  const { ANALYSIS_SYSTEM } = await import("../app/core/prompts.js");
+  assert.match(ANALYSIS_SYSTEM, /appears only once/);
 });

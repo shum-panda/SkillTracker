@@ -78,7 +78,7 @@ export async function renderSession(root, ctx, [category]) {
 
   if (provider) {
     generateDrill(provider, {
-      category, level: entries[0]?.analysis?.cefr, examples: exercises.map((x) => x.prompt),
+      category, level: entries.find((e) => e.analysis)?.analysis.cefr, examples: exercises.map((x) => x.prompt),
       topics: entries.map((e) => e.topic).filter(Boolean), count: ROUND_AI,
     }).then((list) => {
       if (ctx.trainToken !== token) return;
@@ -93,7 +93,10 @@ export async function renderSession(root, ctx, [category]) {
     });
   }
 
+  let finished = false;
   const finish = async () => {
+    if (finished) return;
+    finished = true;
     const total = results.length;
     const correct = results.filter(Boolean).length;
     if (total) {
@@ -142,7 +145,7 @@ export async function renderSession(root, ctx, [category]) {
         <div class="row" id="after">${!ok && ex.type !== "choose" ? `${ex.type === "fix" && provider ? '<button class="btn small" id="ask">KI fragen</button>' : ""}
           <button class="btn small ghost" id="mine">Meine Antwort stimmt auch</button>` : ""}
           <button class="btn primary" id="next">Weiter</button></div><div id="ai"></div></div>`;
-      root.querySelector("#next").onclick = next;
+      root.querySelector("#next").onclick = (ev) => { ev.currentTarget.disabled = true; next(); };
       root.querySelector("#next").focus();
       root.querySelector("#mine")?.addEventListener("click", () => {
         results[results.length - 1] = true;
@@ -157,7 +160,7 @@ export async function renderSession(root, ctx, [category]) {
         box.innerHTML = `<div class="row muted small">${spinner}<span>KI prüft …</span></div>`;
         const idx = results.length - 1;
         try {
-          const r = await judgeRevision(provider, { sentence: ex.prompt, answer: given, quote: ex.prompt, correction: ex.answer, category });
+          const r = await judgeRevision(provider, { sentence: ex.prompt, answer: given, quote: ex.quote || ex.prompt, correction: ex.correction ?? ex.answer, category });
           if (!box.isConnected) return;
           box.innerHTML = `<p class="small"><b>KI:</b> ${esc(r.feedback)}</p>`;
           if (r.correct) {
