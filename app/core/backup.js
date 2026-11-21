@@ -11,7 +11,7 @@ import { newSched } from "./srs.js";
 const APP = "skilltracker";
 const VERSION = 1;
 const METRIC_KEYS = ["words", "sentences", "mtld", "levelShare", "levelCounted", "avgLen", "subPerSentence"];
-const SETTING_KEYS = ["providers", "ocrProvider", "analysisProvider", "showImproved", "theme", "newPerDay", "deletedCardKeys"];
+const SETTING_KEYS = ["providers", "ocrProvider", "analysisProvider", "showImproved", "theme", "newPerDay", "deletedCardKeys", "drills"];
 
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const s = (v, max = 100000) => (typeof v === "string" ? v.slice(0, max) : "");
@@ -68,6 +68,11 @@ function cleanSettings(raw) {
   if (typeof raw.showImproved === "boolean") out.showImproved = raw.showImproved;
   if (["auto", "light", "dark"].includes(raw.theme)) out.theme = raw.theme;
   if (Number.isInteger(raw.newPerDay) && raw.newPerDay >= 0 && raw.newPerDay <= 50) out.newPerDay = raw.newPerDay;
+  if (Array.isArray(raw.drills)) {
+    out.drills = raw.drills.filter((d) => isObj(d) && iso(d.createdAt) && categoryById(d.category) && Number.isInteger(d.total)
+      && d.total >= 1 && d.total <= 100 && Number.isInteger(d.correct) && d.correct >= 0 && d.correct <= d.total)
+      .map((d) => ({ createdAt: iso(d.createdAt), category: d.category, total: d.total, correct: d.correct })).slice(-500);
+  }
   if (Array.isArray(raw.deletedCardKeys)) out.deletedCardKeys = raw.deletedCardKeys.filter((k) => typeof k === "string" && k.length < 600).slice(-5000);
   return out;
 }

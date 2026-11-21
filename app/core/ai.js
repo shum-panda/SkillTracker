@@ -2,7 +2,9 @@
 import { completeJSON } from "./providers/index.js";
 import { badOutput } from "./providers/errors.js";
 import { ANALYSIS_SCHEMA, OCR_SCHEMA, validate } from "./schema.js";
-import { ANALYSIS_SYSTEM, JUDGE_SYSTEM, OCR_SYSTEM, analysisPrompt, judgePrompt, ocrPrompt, retryPrompt } from "./prompts.js";
+import { ANALYSIS_SYSTEM, DRILL_SYSTEM, JUDGE_SYSTEM, OCR_SYSTEM, analysisPrompt, drillPrompt, judgePrompt, ocrPrompt, retryPrompt } from "./prompts.js";
+import { cleanDrill, DRILL_SCHEMA } from "./drill.js";
+import { categoryById } from "./taxonomy.js";
 
 async function askValid(provider, req, deps) {
   let value;
@@ -46,4 +48,16 @@ export const JUDGE_SCHEMA = {
 // Ist die Variante des Lernenden auch richtig? (Überarbeiten, „KI fragen“)
 export function judgeRevision(provider, task, deps = {}) {
   return askValid(provider, { system: JUDGE_SYSTEM, prompt: judgePrompt(task), schema: JUDGE_SCHEMA, schemaName: "revision_check" }, deps);
+}
+
+// Übungen zu einer Fehlerart; ungültige werden verworfen, unter 3 gültigen gilt die Antwort als unbrauchbar.
+export async function generateDrill(provider, { category, level, examples = [], topics = [], count = 6 }, deps = {}) {
+  const c = categoryById(category);
+  const raw = await askValid(provider, {
+    system: DRILL_SYSTEM, schema: DRILL_SCHEMA, schemaName: "grammar_drill",
+    prompt: drillPrompt({ category, label: c?.label || category, tip: c?.tip || "", level, examples: examples.slice(0, 3), topics: topics.slice(0, 5), count }),
+  }, deps);
+  const list = cleanDrill(raw);
+  if (list.length < 3) throw badOutput(`${provider.model}: nur ${list.length} brauchbare Übungen`);
+  return list;
 }
