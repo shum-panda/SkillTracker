@@ -115,7 +115,7 @@ export function demoEntries(freqMap, now = new Date()) {
       createdAt: new Date(now.getTime() - s.daysAgo * 86400000).toISOString(),
       topic: s.topic,
       source: s.source,
-      thumb: "",
+      thumbs: [],
       text: s.text,
       analysis: structuredClone(s.analysis),
       metrics,

@@ -6,6 +6,7 @@ import { tokenize } from "../../core/text.js";
 import { esc, spinner } from "../dom.js";
 import { prepareImage } from "../image.js";
 import { renderEntry } from "./entry.js";
+import { addPages, entryThumbs, joinPages, MAX_PAGES, movePage, removePage } from "../../core/pages.js";
 
 const errorText = (e) => esc(e?.message || String(e)) + (e?.detail ? `<br><span class="small muted">${esc(e.detail)}</span>` : "");
 
@@ -17,10 +18,11 @@ const onPage = () => location.hash === "#/new" && page && document.body.contains
 
 export async function render(root, ctx) {
   const store = ctx.store;
-  const draft = (await store.getSetting("draft")) || { text: "", topic: "", thumb: "", source: "typed" };
+  const draft = (await store.getSetting("draft")) || { text: "", topic: "", thumbs: [], source: "typed" };
   const ocr = await ctx.providerFor("ocr");
   const analysisProvider = await ctx.providerFor("analysis");
-  let image = null;         // vorbereitetes Foto (nur im Speicher)
+  // Seiten: {thumb, mediaType?, base64?}. Nach einem Neuladen gibt es nur noch die Vorschau (kein erneutes Einlesen).
+  let pages = entryThumbs(draft).map((thumb) => ({ thumb }));
   let ocrController = null; // laufendes Einlesen
 
   root.innerHTML = `
@@ -46,12 +48,12 @@ export async function render(root, ctx) {
         <p class="small muted">${analysisProvider ? `Bewertung mit ${esc(analysisProvider.name)} · ${esc(analysisProvider.model)}` : ""}</p>
       </section>
       <section class="card stack">
-        <h2>Foto einlesen</h2>
-        <p class="muted small">Gutes Licht, Blatt gerade von oben. Die KI schreibt deinen Text ab, <b>ohne</b> ihn zu verbessern –
-        prüf danach, ob sie alles richtig gelesen hat.</p>
-        <label class="btn" for="photo">Foto aufnehmen oder wählen</label>
-        <input class="sr-only" type="file" id="photo" accept="image/*">
-        <img id="thumb" class="thumb ${draft.thumb ? "" : "hidden"}" alt="Vorschau des Fotos" src="${esc(draft.thumb || "")}">
+        <h2>Fotos einlesen</h2>
+        <p class="muted small">Gutes Licht, Blatt gerade von oben. Mehrere Seiten gehen auch (bis ${MAX_PAGES}) – bring sie mit
+        ↑ ↓ in die richtige Reihenfolge. Die KI schreibt deinen Text ab, <b>ohne</b> ihn zu verbessern.</p>
+        <label class="btn" for="photo" id="photo-label">Fotos aufnehmen oder wählen</label>
+        <input class="sr-only" type="file" id="photo" accept="image/*" multiple>
+        <ol class="pages" id="pages" aria-label="Seiten in Lesereihenfolge"></ol>
         <button class="btn" id="read" disabled>Text einlesen</button>
         <p class="small muted">${ocr ? `Einlesen mit ${esc(ocr.name)} · ${esc(ocr.model)}` : "Zum Einlesen brauchst du eine KI, die Bilder versteht."}</p>
       </section>
@@ -61,13 +63,29 @@ export async function render(root, ctx) {
   const textEl = $("text");
   const topicEl = $("topic");
   const status = $("status");
-  let thumb = draft.thumb || "";
   let source = draft.source || "typed";
+  const thumbs = () => pages.map((p) => p.thumb);
+  const readable = () => pages.length > 0 && pages.every((p) => p.base64);
 
   let saveTimer;
   const saveDraft = () => {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => store.setSetting("draft", { text: textEl.value, topic: topicEl.value, thumb, source }).catch(() => {}), 400);
+    saveTimer = setTimeout(() => store.setSetting("draft", { text: textEl.value, topic: topicEl.value, thumbs: thumbs(), source })
+      .catch(() => {}), 400);
+  };
+  const renderPages = () => {
+    const n = pages.length;
+    $("pages").innerHTML = pages.map((p, i) => `<li>
+      <img src="${esc(p.thumb)}" alt="Seite ${i + 1}">
+      <span class="pg">Seite ${i + 1}${p.base64 ? "" : '<br><span class="small muted">nur Vorschau</span>'}</span>
+      <span class="pg-actions">
+        <button class="btn small" data-act="up" data-i="${i}" ${i === 0 ? "disabled" : ""} aria-label="Seite ${i + 1} nach oben">↑</button>
+        <button class="btn small" data-act="down" data-i="${i}" ${i === n - 1 ? "disabled" : ""} aria-label="Seite ${i + 1} nach unten">↓</button>
+        <button class="btn small danger" data-act="del" data-i="${i}" aria-label="Seite ${i + 1} entfernen">×</button>
+      </span></li>`).join("");
+    $("photo-label").textContent = n ? "Weitere Seite hinzufügen" : "Fotos aufnehmen oder wählen";
+    $("photo-label").classList.toggle("hidden", n >= MAX_PAGES);
+    $("read").textContent = n > 1 ? `${n} Seiten einlesen` : "Text einlesen";
   };
   const updateCount = () => {
     const n = tokenize(textEl.value).length;
@@ -78,6 +96,7 @@ export async function render(root, ctx) {
     $("unclear").textContent = unclear ? `${unclear}× [?] – bitte prüfen` : "";
   };
   updateCount();
+  renderPages();
   textEl.addEventListener("input", () => { updateCount(); saveDraft(); });
   topicEl.addEventListener("input", saveDraft);
 
@@ -89,7 +108,7 @@ export async function render(root, ctx) {
   const idle = () => {
     $("cancel").classList.add("hidden");
     $("analyze").disabled = !analysisProvider || !!running;
-    $("read").disabled = !(image && ocr) || !!running;
+    $("read").disabled = !(readable() && ocr) || !!running;
     $("clear").disabled = !!running;
   };
   page = { root, status, idle };
@@ -98,52 +117,80 @@ export async function render(root, ctx) {
   $("clear").onclick = async () => {
     textEl.value = "";
     topicEl.value = "";
-    thumb = "";
-    image = null;
+    pages = [];
     source = "typed";
-    $("thumb").classList.add("hidden");
+    renderPages();
     status.textContent = "";
     updateCount();
     idle();
     await store.setSetting("draft", null).catch(() => {});
   };
 
+  $("pages").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button[data-act]");
+    if (!b || running || ocrController) return;
+    const i = Number(b.dataset.i);
+    if (b.dataset.act === "up") pages = movePage(pages, i, -1);
+    if (b.dataset.act === "down") pages = movePage(pages, i, 1);
+    if (b.dataset.act === "del") pages = removePage(pages, i);
+    renderPages();
+    saveDraft();
+    idle();
+    const again = $("pages").querySelector(`button[data-act="${b.dataset.act}"][data-i="${b.dataset.act === "up" ? i - 1 : b.dataset.act === "down" ? i + 1 : i}"]`);
+    (again && !again.disabled ? again : $("read")).focus();
+  });
+
   $("photo").addEventListener("change", async (ev) => {
-    const file = ev.target.files?.[0];
+    const files = [...(ev.target.files || [])];
     ev.target.value = "";
-    if (!file) return;
-    status.innerHTML = `<div class="row muted">${spinner}<span>Foto wird vorbereitet …</span></div>`;
-    try {
-      image = await prepareImage(file);
-      thumb = image.thumb;
-      $("thumb").src = thumb;
-      $("thumb").classList.remove("hidden");
-      status.textContent = ocr ? "Foto bereit – jetzt „Text einlesen“." : "";
-      saveDraft();
-    } catch (e) {
-      image = null;
-      status.innerHTML = `<p class="note">${errorText(e)}</p>`;
+    if (!files.length) return;
+    const prepared = [];
+    const failed = [];
+    for (const [k, file] of files.entries()) {
+      status.innerHTML = `<div class="row muted">${spinner}<span>Foto ${k + 1} von ${files.length} wird vorbereitet …</span></div>`;
+      try {
+        prepared.push(await prepareImage(file));
+      } catch (e) {
+        failed.push(`${file.name || `Foto ${k + 1}`}: ${e.message}`);
+      }
     }
+    const r = addPages(pages, prepared);
+    pages = r.pages;
+    renderPages();
+    saveDraft();
+    const notes = [...failed];
+    if (r.dropped) notes.push(`${r.dropped} Foto(s) nicht übernommen – höchstens ${MAX_PAGES} Seiten.`);
+    status.innerHTML = notes.length ? `<p class="note">${notes.map(esc).join("<br>")}</p>`
+      : esc(ocr ? (pages.length > 1 ? "Reihenfolge prüfen, dann einlesen." : "Foto bereit – jetzt „Text einlesen“.") : "");
     idle();
   });
 
   $("read").onclick = async () => {
-    if (!image || !ocr) return;
+    if (!readable() || !ocr) return;
     if (textEl.value.trim() && !confirm("Der vorhandene Text wird durch den eingelesenen ersetzt. Weiter?")) return;
     ocrController = new AbortController();
     const stop = () => ocrController?.abort(); // Einlesen ist billig: beim Wegnavigieren abbrechen
     window.addEventListener("hashchange", stop, { once: true });
-    setBusy("Text wird eingelesen …", true);
+    const texts = [];
     try {
-      textEl.value = await transcribe(ocr, image, { signal: ocrController.signal });
+      for (const [k, p] of pages.entries()) {
+        setBusy(pages.length > 1 ? `Seite ${k + 1} von ${pages.length} wird eingelesen …` : "Text wird eingelesen …", true);
+        texts.push(await transcribe(ocr, p, { signal: ocrController.signal }));
+      }
+      textEl.value = joinPages(texts);
       source = "photo";
-      updateCount();
-      saveDraft();
-      status.innerHTML = '<p class="note">Eingelesen. Bitte vergleiche mit deinem Blatt und korrigiere Lesefehler, <b>nicht</b> deine eigenen Fehler.</p>';
+      status.innerHTML = '<p class="note">Eingelesen. Bitte vergleiche mit deinen Blättern und korrigiere Lesefehler, <b>nicht</b> deine eigenen Fehler.</p>';
       textEl.focus();
     } catch (e) {
-      status.innerHTML = `<p class="note">${errorText(e)}</p>`;
+      if (texts.length) {
+        textEl.value = joinPages(texts);
+        source = "photo";
+      }
+      const part = texts.length ? `Seite ${texts.length + 1} konnte nicht eingelesen werden – die Seiten davor stehen im Textfeld.<br>` : "";
+      status.innerHTML = `<p class="note">${part}${errorText(e)}</p>`;
     }
+    updateCount();
+    saveDraft();
     window.removeEventListener("hashchange", stop);
     ocrController = null;
     idle();
@@ -160,8 +207,8 @@ export async function render(root, ctx) {
     const topic = topicEl.value.trim().slice(0, 200);
     const job = { controller: new AbortController() };
     running = job;
-    const snapshot = { text, topic, source, thumb: source === "photo" ? thumb : "" };
-    store.setSetting("draft", { text, topic, thumb, source }).catch(() => {});
+    const snapshot = { text, topic, source, thumbs: source === "photo" ? thumbs() : [] };
+    store.setSetting("draft", { text, topic, thumbs: thumbs(), source }).catch(() => {});
     setBusy("Wird bewertet … das dauert meist 10–40 Sekunden. Du kannst solange woanders hin.", true);
     runAnalysis(ctx, store, analysisProvider, ocr, snapshot, job);
   };
@@ -176,7 +223,7 @@ async function runAnalysis(ctx, store, provider, ocr, snap, job) {
     const [freq, analysis] = await Promise.all([ctx.loadFreq(), analyze(provider, snap.text, snap.topic, { signal: job.controller.signal })]);
     const metrics = computeMetrics(snap.text, freq);
     entry = {
-      createdAt: new Date().toISOString(), topic: snap.topic, source: snap.source, thumb: snap.thumb,
+      createdAt: new Date().toISOString(), topic: snap.topic, source: snap.source, thumbs: snap.thumbs,
       text: snap.text, analysis, metrics, scores: computeScores(metrics, analysis),
       model: { ocr: snap.source === "photo" && ocr ? ocr.model : "", analysis: provider.model }, schemaVersion: 1,
     };

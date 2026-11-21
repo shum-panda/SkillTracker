@@ -257,3 +257,12 @@ ins { color: var(--ok); text-decoration: none; font-weight: 600; }
 del { color: var(--muted); text-decoration-color: var(--bad); }
 .banner[hidden], .toast[hidden] { display: none; }
 label.btn { margin: 0; font-size: 16px; }
+.pages { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.pages:empty { display: none; }
+.pages li { display: flex; align-items: center; gap: 12px; padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.pages img { width: 56px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); flex: none; }
+.pages .pg { flex: 1; font-weight: 600; font-family: var(--f-mono); font-size: 14px; }
+.pages .pg-actions { display: flex; gap: 6px; }
+.pages .pg-actions .btn { min-width: 40px; padding: 0; font-size: 16px; }
+.page-shots { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); margin-top: 10px; }
+.page-shots figure { margin: 0; }

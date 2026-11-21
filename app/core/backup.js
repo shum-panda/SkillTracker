@@ -2,6 +2,7 @@
 import { ANALYSIS_SCHEMA, validate } from "./schema.js";
 import { AXES } from "./scores.js";
 import { PROVIDER_TYPES } from "./providers/index.js";
+import { entryThumbs, MAX_PAGES } from "./pages.js";
 
 const APP = "skilltracker";
 const VERSION = 1;
@@ -53,7 +54,8 @@ function cleanEntry(e) {
     createdAt: created.toISOString(),
     topic: s(e.topic, 200),
     source: e.source === "photo" ? "photo" : "typed",
-    thumb: /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(e.thumb || "") ? e.thumb : "",
+    thumbs: entryThumbs(e).filter((t) => typeof t === "string" && /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(t))
+      .slice(0, MAX_PAGES),
     text: s(e.text),
     analysis: e.analysis,
     metrics: Object.fromEntries(METRIC_KEYS.map((k) => [k, e.metrics[k]])),

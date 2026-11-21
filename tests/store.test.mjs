@@ -67,7 +67,7 @@ test("Import: Einträge gesäubert, kaputte verworfen, Schlüssel nur auf Wunsch
   assert.equal(parsed.skipped, 3);
   assert.equal(parsed.hasKeys, true);
   assert.equal(parsed.entries[0].text, "<script>alert(1)</script>", "Text bleibt Text");
-  assert.equal(parsed.entries[0].thumb, "");
+  assert.deepEqual(parsed.entries[0].thumbs, []);
   assert.equal("extraField" in parsed.entries[0], false);
   assert.equal(parsed.settings.providers.length, 1);
   assert.equal("junk" in parsed.settings, false);

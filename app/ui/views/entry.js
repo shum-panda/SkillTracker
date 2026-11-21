@@ -6,6 +6,7 @@ import { errorGroupCounts } from "../../core/stats.js";
 import { confirmDialog, esc, fmtDate, openModal, closeModal } from "../dom.js";
 import { barSvg, radarSvg } from "../charts.js";
 import { highlightHtml } from "../highlight.js";
+import { entryThumbs } from "../../core/pages.js";
 
 function errorDetail(e) {
   const cat = categoryById(e.category);
@@ -34,6 +35,7 @@ export async function renderEntry(root, ctx, e, all, { unsaved = false } = {}) {
   const counts = errorGroupCounts(a.errors);
   const showImproved = (await ctx.store.getSetting("showImproved")) !== false;
   const rel = reliability(e.metrics.words);
+  const thumbs = entryThumbs(e);
 
   root.innerHTML = `
     <div class="head">
@@ -103,7 +105,9 @@ export async function renderEntry(root, ctx, e, all, { unsaved = false } = {}) {
         <div class="small muted">Bewertet mit ${esc(e.model.analysis)}${e.model.ocr ? ` · eingelesen mit ${esc(e.model.ocr)}` : ""}</div>
         ${unsaved ? "" : '<button class="btn small danger" id="delete">Text löschen</button>'}
       </div>
-      ${e.thumb ? `<details><summary class="small">Foto ansehen</summary><img class="thumb" alt="Foto des Textes" src="${esc(e.thumb)}"></details>` : ""}
+      ${thumbs.length ? `<details><summary class="small">${thumbs.length > 1 ? `${thumbs.length} Seiten ansehen` : "Foto ansehen"}</summary>
+        <div class="page-shots">${thumbs.map((t, i) => `<figure><img class="thumb" alt="Seite ${i + 1}" src="${esc(t)}">
+        ${thumbs.length > 1 ? `<figcaption class="small muted">Seite ${i + 1}</figcaption>` : ""}</figure>`).join("")}</div></details>` : ""}
     </section>`;
 
   const detail = root.querySelector("#detail");
