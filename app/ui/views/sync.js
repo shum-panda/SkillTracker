@@ -2,7 +2,7 @@
 import { buildSnapshot, mergeSnapshot } from "../../core/sync.js";
 import { newKey, randomId } from "../../core/seal.js";
 import { parseSyncHash, qrSvg, syncLink } from "../../core/qr.js";
-import { esc, spinner } from "../dom.js";
+import { confirmDialog, esc, spinner } from "../dom.js";
 import { exchange, host, join } from "../peer.js";
 
 const STATUS = {
@@ -23,7 +23,10 @@ export async function render(root, ctx) {
     return;
   }
   const params = parseSyncHash(location.hash);
-  const relay = params?.relay || (await store.getSetting("relayUrl")) || "";
+  const ownRelay = (await store.getSetting("relayUrl")) || "";
+  const relay = params?.relay || ownRelay;
+  const relayHost = (() => { try { return new URL(relay).host; } catch { return ""; } })();
+  const foreignRelay = params && ownRelay && params.relay.replace(/\/+$/, "") !== ownRelay.replace(/\/+$/, "");
   const controller = new AbortController();
   window.addEventListener("hashchange", () => controller.abort(), { once: true });
   let pc = null;
@@ -38,8 +41,10 @@ export async function render(root, ctx) {
     ${!relay ? `<div class="note">Es ist noch kein Vermittler eingetragen. Trag in den <a href="#/settings">Einstellungen</a> die Adresse deines
       Vermittlers ein (läuft auf deinem Server, siehe Anleitung). Bis dahin: Export/Import als Datei.</div>` : ""}
     <section class="card stack" id="box">
-      <label class="check"><input type="checkbox" id="keys"> KI-Zugänge (mit Schlüsseln) mitschicken</label>
-      <p class="small muted">Nur ankreuzen, wenn beide Geräte dir gehören.</p>
+      ${params ? `<p class="small">Vermittler: <span class="mono">${esc(relayHost)}</span>${foreignRelay
+        ? " – <b>nicht dein eingetragener Vermittler.</b> Nur fortfahren, wenn der Code von deinem eigenen Gerät stammt." : ""}</p>` : ""}
+      <label class="check"><input type="checkbox" id="keys"> KI-Zugänge (mit Schlüsseln) austauschen</label>
+      <p class="small muted">Nur ankreuzen, wenn beide Geräte dir gehören. Fremde KI-Zugänge werden nur übernommen, wenn auch hier angekreuzt ist.</p>
       <div class="row"><button class="btn primary" id="go" ${relay ? "" : "disabled"}>${params ? "Verbinden und abgleichen" : "QR-Code anzeigen"}</button></div>
     </section>
     <div id="out" aria-live="polite"></div>`;
@@ -77,7 +82,11 @@ export async function render(root, ctx) {
       }
       pc = conn.pc;
       const snapshot = buildSnapshot(store, { includeProviders }).then((s) => JSON.stringify(s));
-      const res = await exchange(conn.dc, snapshot, (snap) => mergeSnapshot(store, snap), {
+      const confirmDeletions = ({ entries, cards }) => confirmDialog("Löschungen übernehmen?",
+        `Auf dem anderen Gerät wurden ${entries} Text(e) und ${cards} Karte(n) gelöscht, die es hier noch gibt. Sollen sie auch hier ` +
+        "gelöscht werden? „Abbrechen“ behält sie – alles andere wird trotzdem abgeglichen.", { ok: "Auch hier löschen", danger: true });
+      const res = await exchange(conn.dc, snapshot,
+        (snap) => mergeSnapshot(store, snap, { confirmDeletions, acceptProviders: includeProviders }), {
         onProgress: (dir, i, n) => { out.innerHTML = `<div class="row muted">${spinner}<span>${dir === "send" ? "Sende" : "Empfange"} … ${n > 0 ? Math.round((i / n) * 100) : 0} %</span></div>`; },
       });
       ctx.cardsSync = null;

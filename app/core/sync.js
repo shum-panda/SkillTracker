@@ -48,18 +48,26 @@ const revKey = (r) => `${r.createdAt}|${r.mode}`;
 const drillKey = (d) => `${d.createdAt}|${d.category}`;
 const strip = ({ _oldId, _revisionOf, _revisionOfUid, ...e }) => ({ ...e, revisions: e.revisions.map(({ _resultOld, _resultUid, ...r }) => r) });
 
-export async function mergeSnapshot(store, snap) {
+// confirmDeletions({entries, cards}) → Promise<boolean>: Löschungen vom anderen Gerät nur nach Bestätigung (ohne → keine).
+// acceptProviders: fremde KI-Zugänge nur übernehmen, wenn dieses Gerät das ausdrücklich will.
+export async function mergeSnapshot(store, snap, { confirmDeletions = null, acceptProviders = false } = {}) {
   if (!isObj(snap) || snap.app !== APP || snap.kind !== "sync") throw new Error("Das sind keine SkillTracker-Daten.");
   const stats = { entriesAdded: 0, entriesUpdated: 0, cardsAdded: 0, cardsUpdated: 0, removed: 0 };
   await ensureUids(store);
   const settings = cleanSettings(snap.settings);
 
-  // Grabsteine vereinigen und anwenden
-  const tomb = new Set([...((await store.getSetting("deletedEntryUids")) || []), ...(settings.deletedEntryUids || [])]);
-  await store.setSetting("deletedEntryUids", [...tomb].slice(-5000));
-  for (const e of await store.listEntries()) {
-    if (e.uid && tomb.has(e.uid)) { await store.deleteEntry(e.id); stats.removed++; }
-  }
+  // Löschungen des anderen Geräts erst zählen und bestätigen lassen – angewendet werden sie ganz am Ende.
+  const localTomb = new Set((await store.getSetting("deletedEntryUids")) || []);
+  const theirTomb = new Set(settings.deletedEntryUids || []);
+  const localKeys = new Set((await store.getSetting("deletedCardKeys")) || []);
+  const theirKeys = new Set(settings.deletedCardKeys || []);
+  const pending = {
+    entries: (await store.listEntries()).filter((e) => e.uid && theirTomb.has(e.uid) && !localTomb.has(e.uid)).length,
+    cards: (await store.listCards()).filter((c) => c.type !== "manual" && theirKeys.has(c.key) && !localKeys.has(c.key)).length,
+  };
+  const acceptDeletes = pending.entries + pending.cards === 0 || (confirmDeletions ? await confirmDeletions(pending) === true : false);
+  const tomb = new Set([...localTomb, ...(acceptDeletes ? theirTomb : [])]);
+  const deletedKeys = new Set([...localKeys, ...(acceptDeletes ? theirKeys : [])]);
 
   // Texte
   const incoming = (Array.isArray(snap.entries) ? snap.entries : []).slice(0, 5000)
@@ -76,7 +84,7 @@ export async function mergeSnapshot(store, snap) {
     const known = new Set((have.revisions || []).map(revKey));
     const extra = strip(clean).revisions.filter((r) => !known.has(revKey(r)));
     if (extra.length) {
-      have.revisions = [...(have.revisions || []), ...extra].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      have.revisions = [...(have.revisions || []), ...extra].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(-50);
       await store.putEntry(have);
       stats.entriesUpdated++;
     }
@@ -101,11 +109,7 @@ export async function mergeSnapshot(store, snap) {
   }
 
   // Karten
-  const deletedKeys = new Set([...((await store.getSetting("deletedCardKeys")) || []), ...(settings.deletedCardKeys || [])]);
-  await store.setSetting("deletedCardKeys", [...deletedKeys].slice(-5000));
-  const cards = await store.listCards();
-  for (const c of cards) if (deletedKeys.has(c.key) && c.type !== "manual") { await store.deleteCard(c.id); stats.removed++; }
-  const remaining = (await store.listCards());
+  const remaining = (await store.listCards()).filter((c) => !(deletedKeys.has(c.key) && c.type !== "manual"));
   const byUid = new Map(remaining.filter((c) => c.uid).map((c) => [c.uid, c]));
   const fresh = [];
   for (const raw of (Array.isArray(snap.cards) ? snap.cards : []).slice(0, 20000)) {
@@ -136,7 +140,7 @@ export async function mergeSnapshot(store, snap) {
   if (newDrills.length) await store.setSetting("drills", [...drills, ...newDrills].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(-500));
 
   // KI-Zugänge nur, wenn das andere Gerät sie ausdrücklich mitgeschickt hat
-  if (Array.isArray(snap.providers)) {
+  if (acceptProviders && Array.isArray(snap.providers)) {
     const clean = cleanSettings({ providers: snap.providers }).providers || [];
     const current = (await store.getSetting("providers")) || [];
     const byId = new Map(current.map((p) => [p.id, p]));
@@ -146,5 +150,18 @@ export async function mergeSnapshot(store, snap) {
     }
     await store.setSetting("providers", [...byId.values()]);
   }
+  // Zum Schluss: bestätigte Löschungen anwenden, Grabsteine merken, verwaiste Karten-Quellen aufräumen.
+  const removedIds = new Set();
+  for (const e of await store.listEntries()) {
+    if (e.uid && tomb.has(e.uid)) { await store.deleteEntry(e.id); removedIds.add(e.id); stats.removed++; }
+  }
+  for (const c of await store.listCards()) {
+    if (c.type !== "manual" && deletedKeys.has(c.key)) { await store.deleteCard(c.id); stats.removed++; continue; }
+    if (removedIds.size && (c.sources || []).some((x) => removedIds.has(x))) {
+      await store.putCard({ ...c, sources: c.sources.filter((x) => !removedIds.has(x)) });
+    }
+  }
+  await store.setSetting("deletedEntryUids", [...tomb].slice(-5000));
+  await store.setSetting("deletedCardKeys", [...deletedKeys].slice(-5000));
   return stats;
 }

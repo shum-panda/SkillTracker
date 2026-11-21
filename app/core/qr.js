@@ -27,6 +27,8 @@ export function parseSyncHash(hash) {
   const room = q.get("r") || "";
   const key = q.get("k") || "";
   const relay = q.get("s") || "";
-  if (!/^[A-Za-z0-9_-]{22,64}$/.test(room) || !/^[A-Za-z0-9_-]{43}$/.test(key) || !/^https?:\/\/[^\s]+$/.test(relay)) return null;
+  // Vermittler nur per https – http nur für einen lokalen Test-Vermittler.
+  const okRelay = /^https:\/\/[^\s]+$/.test(relay) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/[^\s]*)?$/.test(relay);
+  if (!/^[A-Za-z0-9_-]{22,64}$/.test(room) || !/^[A-Za-z0-9_-]{43}$/.test(key) || !okRelay) return null;
   return { room, key, relay };
 }

@@ -107,7 +107,7 @@ test("Gelöschte Texte und Karten bleiben auf beiden Seiten gelöscht", async ()
   await deleteEntryEverywhere(b, victim);
   const { deleteCard } = await import("../app/core/cards.js");
   await deleteCard(b, (await b.listCards())[0]);
-  const r = await mergeSnapshot(a, await buildSnapshot(b));
+  const r = await mergeSnapshot(a, await buildSnapshot(b), { confirmDeletions: async () => true });
   assert.equal(r.removed, 2, "ein Text und eine Karte");
   assert.deepEqual((await a.listEntries()).map((e) => e.text), ["Keep me."]);
   assert.equal((await a.listCards()).length, 0);
@@ -123,7 +123,7 @@ test("KI-Zugänge nur auf Wunsch, kaputte Daten werden verworfen", async () => {
   const withKeys = await buildSnapshot(a, { includeProviders: true });
   assert.equal(withKeys.providers[0].apiKey, "sk-secret");
   const b = await device();
-  await mergeSnapshot(b, withKeys);
+  await mergeSnapshot(b, withKeys, { acceptProviders: true });
   assert.equal((await b.getSetting("providers"))[0].apiKey, "sk-secret");
   const c = await device();
   const r = await mergeSnapshot(c, { app: "skilltracker", kind: "sync", version: 1, entries: [{ uid: "x".repeat(10), text: "<script>" }, "junk"], cards: [{ type: "evil" }] });
@@ -153,4 +153,35 @@ test("QR-Code und Abgleich-Link", () => {
   const svg = qrSvg(link);
   assert.match(svg, /^<svg class="qr" viewBox="0 0 (\d+) \1"/);
   assert.ok(svg.length > 2000);
+});
+
+test("Löschungen vom anderen Gerät nur nach Bestätigung; KI-Zugänge nur auf eigenen Wunsch", async () => {
+  const a = await device();
+  const b = await device();
+  await a.addEntry(base("2026-11-01T10:00:00Z", "Mine."));
+  await a.addCard(makeCard({ type: "gap", front: "Markt", back: "market" }));
+  await ensureUids(a);
+  const victimUid = (await a.listEntries())[0].uid;
+  const evil = { app: "skilltracker", kind: "sync", version: 1, entries: [], cards: [],
+    settings: { deletedEntryUids: [victimUid], deletedCardKeys: ["gap|market"] },
+    providers: [{ id: "x1", type: "compatible", name: "Evil", apiKey: "", baseUrl: "https://evil.example/v1", model: "m" }] };
+  let asked = null;
+  const r = await mergeSnapshot(a, evil, { confirmDeletions: async (n) => { asked = n; return false; } });
+  assert.deepEqual(asked, { entries: 1, cards: 1 });
+  assert.equal(r.removed, 0);
+  assert.equal((await a.listEntries()).length, 1);
+  assert.equal((await a.listCards()).length, 1);
+  assert.deepEqual((await a.getSetting("deletedEntryUids")) || [], [], "abgelehnte Grabsteine werden nicht gespeichert");
+  assert.equal(await a.getSetting("providers"), undefined, "ohne eigene Zustimmung keine fremden KI-Zugänge");
+  const ok = await mergeSnapshot(a, evil, { confirmDeletions: async () => true, acceptProviders: true });
+  assert.equal(ok.removed, 2);
+  assert.equal((await a.getSetting("providers")).length, 1);
+  void b;
+});
+
+test("Abgleich-Link: Vermittler nur per https (außer lokal)", () => {
+  const q = (s) => `#/sync?r=${"r".repeat(22)}&k=${"k".repeat(43)}&s=${encodeURIComponent(s)}`;
+  assert.equal(parseSyncHash(q("http://evil.example")), null);
+  assert.ok(parseSyncHash(q("http://127.0.0.1:8830")));
+  assert.ok(parseSyncHash(q("https://sync.example.de")));
 });

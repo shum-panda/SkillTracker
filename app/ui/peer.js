@@ -25,20 +25,36 @@ function opened(dc, signal) {
   });
 }
 
+const unreadable = () => new Error("Die Verbindungsdaten passen nicht zum Code – bitte am anderen Gerät einen neuen anzeigen.");
+
+// Bei Fehler oder Abbruch die Verbindung immer schließen.
+async function guarded(pc, signal, fn) {
+  const close = () => { try { pc.close(); } catch { /* egal */ } };
+  signal?.addEventListener("abort", close, { once: true });
+  try {
+    return await fn();
+  } catch (e) {
+    close();
+    throw e;
+  }
+}
+
 // Gerät A: Angebot ablegen, auf Antwort warten.
-export async function host({ relay, room, key, signal, onStatus = () => {} }) {
+export function host({ relay, room, key, signal, onStatus = () => {} }) {
   const pc = new RTCPeerConnection({ iceServers: [] });
-  const dc = pc.createDataChannel("skilltracker", { ordered: true });
-  await pc.setLocalDescription(await pc.createOffer());
-  await gathered(pc);
-  await relayPut(relay, room, "offer", await seal(key, { sdp: pc.localDescription.toJSON() }), { signal });
-  onStatus("waiting");
-  const answer = await relayWait(relay, room, "answer", { signal });
-  if (!answer) throw new Error("Kein Gerät hat sich innerhalb von 3 Minuten verbunden.");
-  const { sdp } = await unseal(key, answer);
-  onStatus("connecting");
-  await pc.setRemoteDescription(sdp);
-  return { pc, dc: await opened(dc, signal) };
+  return guarded(pc, signal, async () => {
+    const dc = pc.createDataChannel("skilltracker", { ordered: true });
+    await pc.setLocalDescription(await pc.createOffer());
+    await gathered(pc);
+    await relayPut(relay, room, "offer", await seal(key, { sdp: pc.localDescription.toJSON() }), { signal });
+    onStatus("waiting");
+    const answer = await relayWait(relay, room, "answer", { signal });
+    if (!answer) throw new Error("Kein Gerät hat sich innerhalb von 3 Minuten verbunden.");
+    const { sdp } = await unseal(key, answer).catch(() => { throw unreadable(); });
+    onStatus("connecting");
+    await pc.setRemoteDescription(sdp);
+    return { pc, dc: await opened(dc, signal) };
+  });
 }
 
 // Gerät B: Angebot abholen, Antwort ablegen.
@@ -46,43 +62,87 @@ export async function join({ relay, room, key, signal, onStatus = () => {} }) {
   onStatus("fetching");
   const offer = await relayWait(relay, room, "offer", { signal, totalMs: 30000 });
   if (!offer) throw new Error("Der Code ist abgelaufen oder wurde schon benutzt – bitte am anderen Gerät einen neuen anzeigen.");
-  const { sdp } = await unseal(key, offer);
+  const { sdp } = await unseal(key, offer).catch(() => { throw unreadable(); });
   const pc = new RTCPeerConnection({ iceServers: [] });
-  const channel = new Promise((resolve) => pc.addEventListener("datachannel", (ev) => resolve(ev.channel), { once: true }));
-  await pc.setRemoteDescription(sdp);
-  await pc.setLocalDescription(await pc.createAnswer());
-  await gathered(pc);
-  await relayPut(relay, room, "answer", await seal(key, { sdp: pc.localDescription.toJSON() }), { signal });
-  onStatus("connecting");
-  const dc = await Promise.race([channel, new Promise((_, rej) => setTimeout(() => rej(new Error("Die Geräte haben sich nicht direkt erreicht. Sind beide im selben WLAN?")), OPEN_WAIT))]);
-  return { pc, dc: await opened(dc, signal) };
+  return guarded(pc, signal, async () => {
+    const channel = new Promise((resolve) => pc.addEventListener("datachannel", (ev) => resolve(ev.channel), { once: true }));
+    await pc.setRemoteDescription(sdp);
+    await pc.setLocalDescription(await pc.createAnswer());
+    await gathered(pc);
+    await relayPut(relay, room, "answer", await seal(key, { sdp: pc.localDescription.toJSON() }), { signal });
+    onStatus("connecting");
+    let timer;
+    const timeout = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error("Die Geräte haben sich nicht direkt erreicht. Sind beide im selben WLAN?")), OPEN_WAIT); });
+    try {
+      const dc = await Promise.race([channel, timeout]);
+      return { pc, dc: await opened(dc, signal) };
+    } finally {
+      clearTimeout(timer);
+    }
+  });
 }
+
+const MAX_CHUNKS = 4000;          // × 16 KB ≈ 64 MB
+const MAX_CHARS = 64 * 1024 * 1024;
+const IDLE_MS = 60000;
 
 // Beide Seiten: eigenen Stand schicken, fremden empfangen, zusammenführen, Ergebnis austauschen.
 // snapshot: Text oder Promise darauf – die Empfänger werden sofort angemeldet, damit keine Nachricht verloren geht.
 export function exchange(dc, snapshot, mergeFn, { onProgress = () => {} } = {}) {
   return new Promise((resolve, reject) => {
-    const parts = [];
+    let parts = null;
+    let received = 0;
+    let chars = 0;
     let expected = -1;
+    let merging = false;
     let myStats = null;
     let theirStats = null;
-    const finish = () => { if (myStats && theirStats) resolve({ mine: myStats, theirs: theirStats }); };
-    dc.addEventListener("close", () => { if (!(myStats && theirStats)) reject(new Error("Die Verbindung wurde getrennt.")); });
+    let settled = false;
+    let idle;
+    const stop = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(idle);
+      fn(value);
+    };
+    const bump = () => {
+      clearTimeout(idle);
+      idle = setTimeout(() => { stop(reject, new Error("Das andere Gerät antwortet nicht mehr.")); try { dc.close(); } catch { /* egal */ } }, IDLE_MS);
+    };
+    bump();
+    const finish = () => { if (myStats && theirStats) stop(resolve, { mine: myStats, theirs: theirStats }); };
+    const bad = (why) => { stop(reject, new Error(why)); try { dc.close(); } catch { /* egal */ } };
+    dc.addEventListener("close", () => stop(reject, new Error("Die Verbindung wurde getrennt.")));
     dc.addEventListener("message", async (ev) => {
+      if (settled || typeof ev.data !== "string" || ev.data.length > 64 * 1024) return;
+      bump();
       let msg;
       try { msg = JSON.parse(ev.data); } catch { return; }
-      if (msg.t === "meta" && Number.isInteger(msg.n) && msg.n >= 0 && msg.n < 20000) expected = msg.n;
-      else if (msg.t === "c" && Number.isInteger(msg.i) && typeof msg.d === "string") {
+      if ((merging || myStats) && msg.t !== "merged") return; // nach dem Empfang nur noch die Rückmeldung
+      if (msg.t === "meta") {
+        if (expected >= 0 || !Number.isInteger(msg.n) || msg.n < 0 || msg.n > MAX_CHUNKS) return bad("Ungültige Daten vom anderen Gerät.");
+        expected = msg.n;
+        parts = new Array(expected);
+      } else if (msg.t === "c") {
+        if (!parts || !Number.isInteger(msg.i) || msg.i < 0 || msg.i >= expected || typeof msg.d !== "string" || parts[msg.i] !== undefined) return;
+        chars += msg.d.length;
+        if (chars > MAX_CHARS) return bad("Zu viele Daten vom anderen Gerät.");
         parts[msg.i] = msg.d;
-        onProgress("receive", parts.filter((x) => x !== undefined).length, expected);
+        received++;
+        onProgress("receive", received, expected);
       } else if (msg.t === "end") {
+        if (!parts || received !== expected) return bad("Unvollständig übertragen.");
+        merging = true;
+        clearTimeout(idle); // die Rückfrage zu Löschungen darf dauern
         try {
-          if (expected < 0 || parts.length !== expected || parts.some((x) => x === undefined)) throw new Error("Unvollständig übertragen.");
           myStats = await mergeFn(JSON.parse(parts.join("")));
+          parts = null;
           dc.send(JSON.stringify({ t: "merged", stats: myStats }));
+          merging = false;
+          bump();
           finish();
         } catch (e) {
-          reject(e);
+          stop(reject, e);
         }
       } else if (msg.t === "merged") {
         theirStats = msg.stats || {};
