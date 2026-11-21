@@ -7,6 +7,7 @@ import { esc, toast } from "./dom.js";
 import * as home from "./views/home.js";
 import * as newText from "./views/new.js";
 import * as entry from "./views/entry.js";
+import * as revise from "./views/revise.js";
 import * as historyView from "./views/history.js";
 import * as settings from "./views/settings.js";
 
@@ -85,6 +86,7 @@ async function enterDemo() {
 const ROUTES = [
   [/^#?\/?$/, home, "home"],
   [/^#\/new$/, newText, "new"],
+  [/^#\/e\/(\d+)\/revise$/, revise, ""],
   [/^#\/e\/(\d+)$/, entry, ""],
   [/^#\/history$/, historyView, "history"],
   [/^#\/settings$/, settings, "settings"],

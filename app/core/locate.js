@@ -3,6 +3,7 @@
 // gelten als gleich. Überlappende oder nicht gefundene Zitate bekommen keine Markierung.
 
 const APOS = /['’‘`]/;
+const LETTER = /\p{L}/u; // Treffer dürfen kein Wort zerschneiden („He go“ nicht in „He goes“)
 
 export function pattern(quote) {
   let src = "";
@@ -20,7 +21,9 @@ function findFree(text, re, from, taken) {
   while ((m = re.exec(text))) {
     const start = m.index;
     const end = start + m[0].length;
-    if (m[0].length && !taken.some((t) => start < t.end && end > t.start)) return { start, end };
+    const cutsWord = (LETTER.test(m[0][0]) && LETTER.test(text[start - 1] || ""))
+      || (LETTER.test(m[0].at(-1)) && LETTER.test(text[end] || ""));
+    if (m[0].length && !cutsWord && !taken.some((t) => start < t.end && end > t.start)) return { start, end };
     re.lastIndex = start + 1;
   }
   return null;

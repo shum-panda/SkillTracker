@@ -53,3 +53,10 @@ test("#8 effort nur bei bekannten neuen Claude-Modellen", () => {
   assert.equal(supportsEffort("claude-3-5-haiku-latest"), false);
   assert.equal(supportsEffort("something-else"), false);
 });
+
+test("Zitate werden nicht mitten im Wort gefunden", () => {
+  const err = (quote) => ({ quote, correction: "", category: "spelling", severity: "minor", explanation: "" });
+  assert.deepEqual(locateErrors("He goes home. He go there.", [err("He go")]), [{ index: 0, start: 14, end: 19 }]);
+  assert.deepEqual(locateErrors("He goes home.", [err("He go")]), []);
+  assert.deepEqual(locateErrors("I said: no.", [err(": no")]), [{ index: 0, start: 6, end: 10 }]);
+});

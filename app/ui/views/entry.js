@@ -7,6 +7,7 @@ import { confirmDialog, esc, fmtDate, openModal, closeModal } from "../dom.js";
 import { barSvg, radarSvg } from "../charts.js";
 import { highlightHtml } from "../highlight.js";
 import { entryThumbs } from "../../core/pages.js";
+import { summarizeRevision } from "../../core/revision.js";
 
 function errorDetail(e) {
   const cat = categoryById(e.category);
@@ -27,8 +28,12 @@ export async function render(root, ctx, [idParam]) {
 
 // Auch für Ergebnisse, die nicht gespeichert werden konnten (unsaved: kein Löschen, Hinweis oben).
 export async function renderEntry(root, ctx, e, all, { unsaved = false } = {}) {
-  const before = all.filter((x) => x.createdAt < e.createdAt).slice(0, 5);
-  const avg = averageScores(before);
+  // Überarbeitete Fassung: Vergleich mit dem Original statt mit dem Schnitt.
+  const original = e.revisionOf ? all.find((x) => x.id === e.revisionOf) : null;
+  const before = original ? [original] : all.filter((x) => x.createdAt < e.createdAt && !x.revisionOf).slice(0, 5);
+  const avg = original ? original.scores : averageScores(before);
+  const compareLabel = original ? "vorher (Original)" : `dein Schnitt davor (${before.length})`;
+  const revisions = Array.isArray(e.revisions) ? e.revisions : [];
   const a = e.analysis;
   const spans = locateErrors(e.text, a.errors);
   const placed = new Set(spans.map((s) => s.index));
@@ -39,16 +44,18 @@ export async function renderEntry(root, ctx, e, all, { unsaved = false } = {}) {
 
   root.innerHTML = `
     <div class="head">
-      <p class="kicker">${esc(fmtDate(e.createdAt))} · ${esc(e.metrics.words)} Wörter${e.source === "photo" ? " · Foto" : ""}</p>
+      <p class="kicker">${esc(fmtDate(e.createdAt))} · ${esc(e.metrics.words)} Wörter${e.source === "photo" ? " · Foto" : ""}${original ? " · Überarbeitung" : ""}</p>
       <div class="row between"><h1>${esc(e.topic || "Dein Text")}</h1><span class="chip level" title="geschätztes Niveau">${esc(a.cefr)}</span></div>
       <p>${esc(a.summary)}</p>
+      ${original ? `<p class="small"><a href="#/e/${original.id}">← Original ansehen</a></p>` : ""}
+      ${unsaved ? "" : `<div class="row"><a class="btn primary" href="#/e/${e.id}/revise">Überarbeiten</a></div>`}
     </div>
     ${unsaved ? '<p class="note"><b>Nicht gespeichert.</b> Das Speichern auf diesem Gerät ist fehlgeschlagen (Speicher voll?). Dein Text bleibt als Entwurf unter „Neuer Text“ erhalten.</p>' : ""}
     ${rel === "short" ? '<p class="note">Kurzer Text – Wortvielfalt und Wortniveau schwanken bei unter 50 Wörtern stark.</p>' : ""}
     <div class="grid side">
       <section class="card">
         <div class="radar-wrap">${radarSvg(AXES, e.scores, avg, { title: "Spinnennetz dieses Textes" })}</div>
-        <div class="legend"><span><span class="key"></span>dieser Text</span>${avg ? `<span><span class="key b"></span>dein Schnitt davor (${before.length})</span>` : ""}</div>
+        <div class="legend"><span><span class="key"></span>dieser Text</span>${avg ? `<span><span class="key b"></span>${esc(compareLabel)}</span>` : ""}</div>
       </section>
       <section class="card">
         <table class="scores">
@@ -95,6 +102,13 @@ export async function renderEntry(root, ctx, e, all, { unsaved = false } = {}) {
           : '<p class="muted">Keine – oder du hast keine deutschen Platzhalter benutzt.</p>'}
       </section>
     </div>
+
+    ${revisions.length ? `<section class="card"><h2>Deine Überarbeitungen</h2><ul class="err-list">${revisions.map((r) => {
+      const sum = summarizeRevision(r.tasks || []);
+      const solved = sum.counts.solo + sum.counts.hint + sum.counts.ai + sum.counts.self;
+      return `<li>${esc(fmtDate(r.createdAt))} · ${r.mode === "steps" ? `Schritt für Schritt: ${solved} von ${(r.tasks || []).length} selbst gelöst` : "ganzer Text"}
+        ${r.resultEntryId ? ` · <a href="#/e/${r.resultEntryId}">Neubewertung ansehen</a>` : ""}</li>`;
+    }).join("")}</ul></section>` : ""}
 
     ${showImproved ? `<section class="card"><details class="improved"><summary>Verbesserte Fassung zum Nachsprechen</summary>
       <p class="improved-text" lang="en">${esc(a.improved_text)}</p>
