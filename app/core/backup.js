@@ -101,6 +101,7 @@ export function cleanEntry(e) {
     scores: Object.fromEntries(AXES.map((a) => [a.key, Math.max(0, Math.min(100, Math.round(e.scores[a.key])))])),
     model: { ocr: s(e.model?.ocr, 200), analysis: s(e.model?.analysis, 200) },
     revisions: (Array.isArray(e.revisions) ? e.revisions : []).map(cleanRevision).filter(Boolean).slice(0, 50),
+    speaking: (Array.isArray(e.speaking) ? e.speaking : []).map(cleanSpeaking).filter(Boolean).slice(-50),
     schemaVersion: 1,
     ...uidPart(e.uid),
     // nur für den Import: alte IDs, werden in applyImport auf neue umgeschrieben und dann entfernt
@@ -108,6 +109,18 @@ export function cleanEntry(e) {
     _revisionOf: Number.isInteger(e.revisionOf) ? e.revisionOf : null,
     _revisionOfUid: isUid(e.revisionOfUid) ? e.revisionOfUid : null,
   };
+}
+
+const int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
+
+function cleanSpeaking(x) {
+  if (!isObj(x) || !["self", "ai", "browser"].includes(x.method) || !["improved", "revision", "own"].includes(x.source)) return null;
+  const created = iso(x.createdAt);
+  if (!created || !int(x.score, 0, 100)) return null;
+  const sentences = (Array.isArray(x.sentences) ? x.sentences : []).filter((t) => isObj(t) && int(t.i, 0, 10000) && int(t.score, 0, 100))
+    .slice(0, 200).map((t) => ({ i: t.i, score: t.score }));
+  const missed = (Array.isArray(x.missed) ? x.missed : []).filter((w) => typeof w === "string" && /^[a-z']{1,40}$/.test(w)).slice(0, 50);
+  return { createdAt: created, method: x.method, source: x.source, score: x.score, sentences, missed };
 }
 
 function cleanRevision(r) {

@@ -81,6 +81,13 @@ export async function mergeSnapshot(store, snap, { confirmDeletions = null, acce
       stats.entriesAdded++;
       continue;
     }
+    const spoken = new Set((have.speaking || []).map((x) => `${x.createdAt}|${x.method}`));
+    const newSpeaking = (clean.speaking || []).filter((x) => !spoken.has(`${x.createdAt}|${x.method}`));
+    if (newSpeaking.length) {
+      have.speaking = [...(have.speaking || []), ...newSpeaking].sort((p, q) => p.createdAt.localeCompare(q.createdAt)).slice(-50);
+      await store.putEntry(have);
+      stats.entriesUpdated++;
+    }
     const known = new Set((have.revisions || []).map(revKey));
     const extra = strip(clean).revisions.filter((r) => !known.has(revKey(r)));
     if (extra.length) {

@@ -13,7 +13,7 @@ export const GOOD = {
 export function fakeFetch(...answers) {
   const calls = [];
   const fn = async (url, init = {}) => {
-    calls.push({ url: String(url), init, body: init.body ? JSON.parse(init.body) : undefined, headers: init.headers || {} });
+    calls.push({ url: String(url), init, body: typeof init.body === "string" ? JSON.parse(init.body) : undefined, headers: init.headers || {} });
     const a = answers[Math.min(calls.length - 1, answers.length - 1)];
     if (a instanceof Error) throw a;
     return new Response(typeof a.body === "string" ? a.body : JSON.stringify(a.body), { status: a.status || 200 });
