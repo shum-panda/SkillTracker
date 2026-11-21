@@ -60,3 +60,29 @@ python tools/make_icons.py
 npm run serve
 node --experimental-websocket tools/shots.mjs http://127.0.0.1:8820 shots
 ```
+
+## Vermittler für den Geräte-Abgleich
+
+Für „Geräte verbinden“ (QR-Code, Abgleich im WLAN) braucht es einen kleinen Vermittler. Er reicht nur verschlüsselte
+Verbindungsdaten weiter (AES-GCM, der Schlüssel steht nur im QR-Code) und speichert nichts dauerhaft – die Daten selbst
+gehen direkt von Gerät zu Gerät.
+
+```
+# auf dem Server (Node ≥ 20, keine Pakete nötig)
+sudo useradd --system --home /srv/skilltracker skilltracker
+sudo git clone https://github.com/shum-panda/SkillTracker.git /srv/skilltracker
+sudo cp /srv/skilltracker/server/skilltracker-relay.service /etc/systemd/system/
+sudo systemctl enable --now skilltracker-relay
+curl http://127.0.0.1:8830/healthz   # → ok
+```
+
+Caddy:
+
+```
+sync.dein-server.de {
+    reverse_proxy 127.0.0.1:8830
+}
+```
+
+Dann in der App unter Einstellungen → Geräte verbinden `https://sync.dein-server.de` eintragen (auf beiden Geräten
+reicht es auf dem, das den QR-Code zeigt – die Adresse steckt im Code). Lokal testen: `RELAY_ORIGINS=http://127.0.0.1:8820 npm run relay`.

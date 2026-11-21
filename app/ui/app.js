@@ -14,6 +14,7 @@ import * as learn from "./views/learn.js";
 import { syncCards } from "../core/cards.js";
 
 import * as train from "./views/train.js";
+import * as syncView from "./views/sync.js";
 
 const learnSession = { render: learn.renderSession };
 const trainSession = { render: train.renderSession };
@@ -105,6 +106,7 @@ const ROUTES = [
   [/^#\/history$/, historyView, "history"],
   [/^#\/settings$/, settings, "settings"],
   [/^#\/learn$/, learn, "learn"],
+  [/^#\/sync(\?.*)?$/, syncView, "settings"],
   [/^#\/train$/, train, "learn"],
   [/^#\/train\/([a-z_]+)$/, trainSession, "learn"],
   [/^#\/learn\/session$/, learnSession, "learn"],

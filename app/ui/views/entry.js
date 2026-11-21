@@ -8,6 +8,7 @@ import { barSvg, radarSvg } from "../charts.js";
 import { highlightHtml } from "../highlight.js";
 import { entryThumbs } from "../../core/pages.js";
 import { summarizeRevision } from "../../core/revision.js";
+import { deleteEntryEverywhere } from "../../core/sync.js";
 
 function errorDetail(e) {
   const cat = categoryById(e.category);
@@ -163,7 +164,7 @@ export async function renderEntry(root, ctx, e, all, { unsaved = false } = {}) {
   }
   if (!unsaved) root.querySelector("#delete").onclick = async () => {
     if (!(await confirmDialog("Text löschen?", "Der Text und seine Bewertung werden von diesem Gerät gelöscht.", { ok: "Löschen", danger: true }))) return;
-    await ctx.store.deleteEntry(e.id);
+    await deleteEntryEverywhere(ctx.store, e);
     ctx.toast("Gelöscht.");
     ctx.navigate("#/");
   };

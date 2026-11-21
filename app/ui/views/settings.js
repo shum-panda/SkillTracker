@@ -98,6 +98,7 @@ export async function render(root, ctx) {
   const anId = (await ctx.providerFor("analysis"))?.id;
   const showImproved = (await ctx.store.getSetting("showImproved")) !== false;
   const theme = (await ctx.store.getSetting("theme")) || "auto";
+  const relayUrl = (await ctx.store.getSetting("relayUrl")) || "";
   const opts = (sel) => providers.map((p) => `<option value="${esc(p.id)}" ${p.id === sel ? "selected" : ""}>${esc(p.name)} · ${esc(p.model)}</option>`).join("");
 
   root.innerHTML = `
@@ -125,6 +126,14 @@ export async function render(root, ctx) {
         <option value="light" ${theme === "light" ? "selected" : ""}>hell</option>
         <option value="dark" ${theme === "dark" ? "selected" : ""}>dunkel</option></select></div>
     </section>
+    ${ctx.demo ? "" : `<section class="card stack">
+      <h2>Geräte verbinden</h2>
+      <p class="muted small">Handy und PC im selben WLAN abgleichen: ein Gerät zeigt einen QR-Code, das andere scannt ihn.
+      Dafür braucht es einen kleinen Vermittler auf deinem Server – er sieht keine Daten.</p>
+      <div class="field"><label for="relay">Vermittler-Adresse</label>
+        <input type="url" id="relay" placeholder="https://sync.dein-server.de" value="${esc(relayUrl)}"></div>
+      <div class="row"><a class="btn primary ${relayUrl ? "" : "disabled-link"}" href="#/sync" id="sync-go">Geräte verbinden</a></div>
+    </section>`}
     ${ctx.demo ? '<section class="card"><h2>Sicherung</h2><p class="muted">In der Demo aus – verlasse die Demo, um deine eigenen Daten zu sichern oder zu importieren.</p></section>' : ""}
     <section class="card ${ctx.demo ? "hidden" : ""}">
       <h2>Sicherung</h2>
@@ -180,6 +189,15 @@ export async function render(root, ctx) {
     } catch (e) {
       out.innerHTML = `<p class="note">${esc(e instanceof SyntaxError ? "Die Datei ist kein gültiges JSON." : e.message)}</p>`;
     }
+  });
+  $("relay")?.addEventListener("change", async (ev) => {
+    const v = ev.target.value.trim().replace(/\/+$/, "");
+    if (v && !/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(v) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(v)) {
+      ctx.toast("Bitte eine https-Adresse eintragen.");
+      return;
+    }
+    await ctx.store.setSetting("relayUrl", v);
+    rerender();
   });
   $("wipe").onclick = async () => {
     if (!(await confirmDialog("Alles löschen?", "Alle Texte, Bewertungen und Schlüssel auf diesem Gerät werden gelöscht. Das lässt sich nicht rückgängig machen.",

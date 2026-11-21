@@ -1,0 +1,24 @@
+# systemd-Dienst für den SkillTracker-Vermittler (Geräte-Abgleich).
+# Kopieren nach /etc/systemd/system/, Pfad und Herkunft anpassen, dann: systemctl enable --now skilltracker-relay
+[Unit]
+Description=SkillTracker-Vermittler (Geräte-Abgleich)
+After=network.target
+
+[Service]
+Type=simple
+User=skilltracker
+WorkingDirectory=/srv/skilltracker
+Environment=PORT=8830
+Environment=HOST=127.0.0.1
+# Adressen, von denen die App geladen wird (kommagetrennt)
+Environment=RELAY_ORIGINS=https://shum-panda.github.io
+ExecStart=/usr/bin/node server/relay.mjs
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target

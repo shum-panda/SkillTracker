@@ -319,3 +319,7 @@ textarea.answer { min-height: 96px; }
 .btn.choice:disabled { opacity: 1; cursor: default; }
 input#answer { font-size: 18px; }
 .weak-list .group-key { margin-right: 8px; vertical-align: -1px; }
+.qr-wrap { max-width: 280px; margin: 0 auto; background: #fff; padding: 8px; border-radius: 12px; }
+.qr-wrap .qr { display: block; width: 100%; height: auto; }
+#link { font-family: var(--f-mono); font-size: 13px; flex: 1 1 200px; }
+.disabled-link { opacity: .5; pointer-events: none; }

@@ -21,3 +21,6 @@ Ohne Schlüssel lässt sich die App unter `#/demo` ansehen. Betrieb auf einem Se
 
 Worthäufigkeiten: [wordfreq](https://github.com/rspeer/wordfreq) von Robyn Speer, Daten unter CC BY-SA 4.0
 (`app/data/wordfreq-en.json`).
+
+QR-Codes: [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) von Kazuhiko Arase, MIT-Lizenz
+(`app/vendor/qrcode.js`, unverändert bis auf den ES-Modul-Export).

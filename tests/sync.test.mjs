@@ -142,3 +142,15 @@ test("Datei-Import überspringt Texte, die es (per uid) schon gibt", async () =>
   await applyImport(b, parseImport(file));
   assert.equal((await b.listEntries())[0].uid, (await a.listEntries())[0].uid);
 });
+
+import { qrSvg, syncLink, parseSyncHash } from "../app/core/qr.js";
+
+test("QR-Code und Abgleich-Link", () => {
+  const link = syncLink("https://shum-panda.github.io/SkillTracker/#/settings", { room: "r".repeat(22), key: "k".repeat(43), relay: "https://sync.example.de" });
+  assert.equal(link, `https://shum-panda.github.io/SkillTracker/#/sync?r=${"r".repeat(22)}&k=${"k".repeat(43)}&s=https%3A%2F%2Fsync.example.de`);
+  assert.deepEqual(parseSyncHash(new URL(link).hash), { room: "r".repeat(22), key: "k".repeat(43), relay: "https://sync.example.de" });
+  assert.equal(parseSyncHash("#/sync?r=x&k=y&s=javascript:alert(1)"), null);
+  const svg = qrSvg(link);
+  assert.match(svg, /^<svg class="qr" viewBox="0 0 (\d+) \1"/);
+  assert.ok(svg.length > 2000);
+});
