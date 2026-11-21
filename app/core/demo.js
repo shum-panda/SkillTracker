@@ -121,7 +121,19 @@ export function demoEntries(freqMap, now = new Date()) {
       metrics,
       scores: computeScores(metrics, s.analysis),
       model: { ocr: s.source === "photo" ? "Demo" : "", analysis: "Demo" },
+      speaking: DEMO_SPEAKING[i].map(([days, score, missed]) => ({
+        createdAt: new Date(now.getTime() - days * 86400000).toISOString(), method: "ai", source: "improved", score,
+        sentences: [], missed,
+      })),
       schemaVersion: 1,
     };
   });
 }
+
+// Aussprache-Übungen der Beispieltexte: [vor Tagen, Wert, schwierige Wörter]
+const DEMO_SPEAKING = [
+  [[41, 58, ["weekend", "lovely"]]],
+  [[27, 66, ["wanderlust", "aloud"]]],
+  [[13, 74, ["daunting"]], [10, 81, []]],
+  [[2, 86, ["character"]]],
+];

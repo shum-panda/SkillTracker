@@ -15,6 +15,7 @@ import { syncCards } from "../core/cards.js";
 
 import * as train from "./views/train.js";
 import * as syncView from "./views/sync.js";
+import * as speakView from "./views/speak.js";
 
 const learnSession = { render: learn.renderSession };
 const trainSession = { render: train.renderSession };
@@ -102,6 +103,7 @@ const ROUTES = [
   [/^#?\/?$/, home, "home"],
   [/^#\/new$/, newText, "new"],
   [/^#\/e\/(\d+)\/revise$/, revise, ""],
+  [/^#\/e\/(\d+)\/speak$/, speakView, ""],
   [/^#\/e\/(\d+)$/, entry, ""],
   [/^#\/history$/, historyView, "history"],
   [/^#\/settings$/, settings, "settings"],

@@ -323,3 +323,10 @@ input#answer { font-size: 18px; }
 .qr-wrap .qr { display: block; width: 100%; height: auto; }
 #link { font-family: var(--f-mono); font-size: 13px; flex: 1 1 200px; }
 .disabled-link { opacity: .5; pointer-events: none; }
+.speak-sentence { font: 600 clamp(20px, 4.6vw, 26px)/1.5 var(--f-display); margin: 4px 0; overflow-wrap: anywhere; }
+.speak-sentence .w-ok { color: var(--ok); }
+.speak-sentence .w-miss { color: var(--bad); text-decoration: underline wavy; text-underline-offset: 4px; }
+.speak-controls .btn { min-height: 52px; }
+.btn.recording { background: var(--bad); border-color: transparent; color: #fff; box-shadow: 0 0 0 4px color-mix(in srgb, var(--bad) 25%, transparent); }
+.btn.rate.chosen { border-color: var(--accent-text); background: var(--accent-soft); }
+.speak-score { font: 700 28px var(--f-display); color: var(--accent-text); }

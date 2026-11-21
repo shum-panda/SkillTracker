@@ -61,6 +61,8 @@ for (const scheme of ["light", "dark"]) {
     await sleep(800);
     await js("document.querySelector('mark.err')?.click()");
     await shot(`${p}-entry-a2`);
+    await js("location.hash = '#/e/4/speak'");
+    await shot(`${p}-speak`);
     await js("location.hash = '#/e/4'");
     await shot(`${p}-entry-b2`);
     await js("location.hash = '#/history'");

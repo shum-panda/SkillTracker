@@ -5,7 +5,9 @@ export const SPEECH_TYPES = ["openai", "compatible", "gemini"]; // Anbieter, die
 const SELF = { good: 100, ok: 60, hard: 20 };
 const WORD = /[A-Za-z]+(?:['’][A-Za-z]+)*['’]?/g;
 
-const norm = (w) => w.replace(/’/g, "'").toLowerCase();
+// Vergleich ohne Apostrophe (Spracherkennungen hören sie nicht); angezeigt wird die Originalform.
+const norm = (w) => w.replace(/['’]/g, "").toLowerCase();
+const shown = (w) => w.replace(/’/g, "'").toLowerCase();
 const words = (s) => String(s || "").match(WORD) || [];
 
 export const selfScore = (rating) => SELF[rating] ?? 0;
@@ -27,7 +29,7 @@ export function alignWords(target, heard) {
   }
   const tokens = t.map((word, i) => ({ word, ok: ok[i] }));
   const matched = ok.filter(Boolean).length;
-  const missed = [...new Set(tn.filter((_, i) => !ok[i]))];
+  const missed = [...new Set(t.filter((_, i) => !ok[i]).map(shown))];
   return { tokens, score: n ? Math.round((matched / n) * 100) : 0, missed };
 }
 

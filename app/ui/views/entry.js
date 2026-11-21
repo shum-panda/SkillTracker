@@ -49,7 +49,7 @@ export async function renderEntry(root, ctx, e, all, { unsaved = false } = {}) {
       <div class="row between"><h1>${esc(e.topic || "Dein Text")}</h1><span class="chip level" title="geschätztes Niveau">${esc(a.cefr)}</span></div>
       <p>${esc(a.summary)}</p>
       ${original ? `<p class="small"><a href="#/e/${original.id}">← Original ansehen</a></p>` : ""}
-      ${unsaved ? "" : `<div class="row"><a class="btn primary" href="#/e/${e.id}/revise">Überarbeiten</a></div>`}
+      ${unsaved ? "" : `<div class="row"><a class="btn primary" href="#/e/${e.id}/revise">Überarbeiten</a><a class="btn" href="#/e/${e.id}/speak">Aussprechen üben</a></div>`}
     </div>
     ${unsaved ? '<p class="note"><b>Nicht gespeichert.</b> Das Speichern auf diesem Gerät ist fehlgeschlagen (Speicher voll?). Dein Text bleibt als Entwurf unter „Neuer Text“ erhalten.</p>' : ""}
     ${rel === "short" ? '<p class="note">Kurzer Text – Wortvielfalt und Wortniveau schwanken bei unter 50 Wörtern stark.</p>' : ""}
@@ -104,6 +104,8 @@ export async function renderEntry(root, ctx, e, all, { unsaved = false } = {}) {
       </section>
     </div>
 
+    ${(e.speaking || []).length ? `<section class="card"><h2>Aussprache</h2><ul class="err-list">${e.speaking.slice(-5).reverse().map((s) =>
+      `<li>${esc(fmtDate(s.createdAt))} · <b>${s.score} %</b> · ${s.method === "self" ? "selbst eingeschätzt" : "automatisch geprüft"}${s.missed.length ? ` · üben: ${s.missed.slice(0, 5).map(esc).join(", ")}` : ""}</li>`).join("")}</ul></section>` : ""}
     ${revisions.length ? `<section class="card"><h2>Deine Überarbeitungen</h2><ul class="err-list">${revisions.map((r) => {
       const sum = summarizeRevision(r.tasks || []);
       const solved = sum.counts.solo + sum.counts.hint + sum.counts.ai + sum.counts.self;

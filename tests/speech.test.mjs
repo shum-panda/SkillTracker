@@ -97,3 +97,9 @@ test("Sicherung und Abgleich nehmen Aussprache-Übungen mit", async () => {
   await mergeSnapshot(a, await buildSnapshot(b));
   assert.deepEqual((await a.listEntries())[0].speaking.map((x) => x.score), [70, 90]);
 });
+
+test("Apostrophe zählen beim Hören nicht (Spracherkennung schreibt sie selten)", () => {
+  const r = alignWords("We went to the farmers' market, didn't we?", "we went to the farmers market didnt we");
+  assert.equal(r.score, 100);
+  assert.deepEqual(r.missed, []);
+});

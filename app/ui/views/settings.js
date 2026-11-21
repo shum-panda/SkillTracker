@@ -99,6 +99,7 @@ export async function render(root, ctx) {
   const showImproved = (await ctx.store.getSetting("showImproved")) !== false;
   const theme = (await ctx.store.getSetting("theme")) || "auto";
   const relayUrl = (await ctx.store.getSetting("relayUrl")) || "";
+  const speechModel = (await ctx.store.getSetting("speechModel")) || "";
   const opts = (sel) => providers.map((p) => `<option value="${esc(p.id)}" ${p.id === sel ? "selected" : ""}>${esc(p.name)} · ${esc(p.model)}</option>`).join("");
 
   root.innerHTML = `
@@ -116,6 +117,9 @@ export async function render(root, ctx) {
         <div class="field"><label for="ocr">Fotos einlesen mit</label><select id="ocr">${opts(ocrId)}</select>
           <div class="hint">Braucht ein Modell, das Bilder versteht.</div></div>
         <div class="field"><label for="an">Texte bewerten mit</label><select id="an">${opts(anId)}</select></div></div>` : ""}
+      ${providers.some((p) => p.type === "openai" || p.type === "compatible") ? `<div class="field"><label for="speech-model">Spracherkennung (Aussprache)</label>
+        <input type="text" id="speech-model" placeholder="whisper-1" value="${esc(speechModel)}">
+        <div class="hint">Modell für OpenAI bzw. kompatible Server, z. B. whisper-1. Leer = whisper-1. Claude versteht kein Audio.</div></div>` : ""}
     </section>
     <section class="card">
       <h2>Anzeige</h2>
@@ -167,6 +171,7 @@ export async function render(root, ctx) {
   $("ocr")?.addEventListener("change", (e) => ctx.store.setSetting("ocrProvider", e.target.value));
   $("an")?.addEventListener("change", (e) => ctx.store.setSetting("analysisProvider", e.target.value));
   $("improved").onchange = (e) => ctx.store.setSetting("showImproved", e.target.checked);
+  $("speech-model")?.addEventListener("change", (e) => ctx.store.setSetting("speechModel", e.target.value.trim().slice(0, 100)));
   $("theme").onchange = async (e) => { await ctx.store.setSetting("theme", e.target.value); await ctx.applyTheme(); };
   $("export").onclick = async () => {
     const data = await exportData(ctx.store, { includeKeys: $("withkeys").checked });
