@@ -10,3 +10,4 @@
 *.py text eol=lf
 *.png binary
 *.woff2 binary
+*.service text eol=lf
