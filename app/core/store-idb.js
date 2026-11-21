@@ -12,12 +12,15 @@ export class IdbStore {
   static open(name = "skilltracker") {
     return new Promise((resolve, reject) => {
       if (!globalThis.indexedDB) return reject(new Error("IndexedDB nicht verfügbar"));
-      const r = indexedDB.open(name, 1);
+      const r = indexedDB.open(name, 2); // 2: Karteikarten
       r.onupgradeneeded = () => {
         const db = r.result;
         if (!db.objectStoreNames.contains("settings")) db.createObjectStore("settings");
         if (!db.objectStoreNames.contains("entries")) {
           db.createObjectStore("entries", { keyPath: "id", autoIncrement: true }).createIndex("createdAt", "createdAt");
+        }
+        if (!db.objectStoreNames.contains("cards")) {
+          db.createObjectStore("cards", { keyPath: "id", autoIncrement: true }).createIndex("key", "key");
         }
       };
       r.onsuccess = () => resolve(new IdbStore(r.result));
@@ -59,9 +62,18 @@ export class IdbStore {
   getEntry(id) { return this.run("entries", "readonly", (tx) => tx.objectStore("entries").get(Number(id))); }
   async listEntries() { return sortEntries((await this.run("entries", "readonly", (tx) => tx.objectStore("entries").getAll())) || []); }
   deleteEntry(id) { return this.run("entries", "readwrite", (tx) => tx.objectStore("entries").delete(Number(id))).then(() => {}); }
+  addCard(card) {
+    const { id, ...rest } = card;
+    return this.run("cards", "readwrite", (tx) => tx.objectStore("cards").add(rest));
+  }
+  putCard(card) { return this.run("cards", "readwrite", (tx) => tx.objectStore("cards").put(card)).then(() => {}); }
+  getCard(id) { return this.run("cards", "readonly", (tx) => tx.objectStore("cards").get(Number(id))); }
+  async listCards() { return ((await this.run("cards", "readonly", (tx) => tx.objectStore("cards").getAll())) || []).sort((a, b) => a.id - b.id); }
+  deleteCard(id) { return this.run("cards", "readwrite", (tx) => tx.objectStore("cards").delete(Number(id))).then(() => {}); }
   clearAll() {
-    return this.run(["settings", "entries"], "readwrite", (tx) => {
+    return this.run(["settings", "entries", "cards"], "readwrite", (tx) => {
       tx.objectStore("settings").clear();
+      tx.objectStore("cards").clear();
       return tx.objectStore("entries").clear();
     }).then(() => {});
   }

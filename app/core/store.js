@@ -1,6 +1,7 @@
 // Speicher-Schnittstelle. MemoryStore für Tests, Demo und Browser ohne IndexedDB; IdbStore in store-idb.js.
 //   getSetting(key) · setSetting(key, value) · addEntry(entry) -> id · putEntry(entry) · getEntry(id)
 //   listEntries() (neueste zuerst) · deleteEntry(id) · clearAll()
+//   addCard(card) -> id · putCard(card) · getCard(id) · listCards() (nach id) · deleteCard(id)
 
 const clone = (v) => (v === undefined ? undefined : structuredClone(v));
 
@@ -13,7 +14,9 @@ export class MemoryStore {
     this.persistent = false;
     this.settings = new Map();
     this.entries = new Map();
+    this.cards = new Map();
     this.nextId = 1;
+    this.nextCardId = 1;
   }
   async getSetting(key) { return clone(this.settings.get(key)); }
   async setSetting(key, value) { this.settings.set(key, clone(value)); }
@@ -29,9 +32,23 @@ export class MemoryStore {
   async getEntry(id) { return clone(this.entries.get(Number(id))); }
   async listEntries() { return sortEntries([...this.entries.values()].map(clone)); }
   async deleteEntry(id) { this.entries.delete(Number(id)); }
+  async addCard(card) {
+    const id = this.nextCardId++;
+    this.cards.set(id, clone({ ...card, id }));
+    return id;
+  }
+  async putCard(card) {
+    this.cards.set(card.id, clone(card));
+    if (card.id >= this.nextCardId) this.nextCardId = card.id + 1;
+  }
+  async getCard(id) { return clone(this.cards.get(Number(id))); }
+  async listCards() { return [...this.cards.values()].map(clone).sort((a, b) => a.id - b.id); }
+  async deleteCard(id) { this.cards.delete(Number(id)); }
   async clearAll() {
     this.settings.clear();
     this.entries.clear();
+    this.cards.clear();
     this.nextId = 1;
+    this.nextCardId = 1;
   }
 }

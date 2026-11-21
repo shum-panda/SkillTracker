@@ -5,6 +5,8 @@ import { PROVIDER_TYPES } from "./providers/index.js";
 import { entryThumbs, MAX_PAGES } from "./pages.js";
 import { categoryById } from "./taxonomy.js";
 import { OUTCOMES } from "./revision.js";
+import { makeCard, mergeCards } from "./cards.js";
+import { newSched } from "./srs.js";
 
 const APP = "skilltracker";
 const VERSION = 1;
@@ -23,7 +25,30 @@ export async function exportData(store, { includeKeys = false } = {}) {
   if (Array.isArray(settings.providers) && !includeKeys) {
     settings.providers = settings.providers.map((p) => ({ ...p, apiKey: "" }));
   }
-  return { app: APP, version: VERSION, exportedAt: new Date().toISOString(), settings, entries: await store.listEntries() };
+  return { app: APP, version: VERSION, exportedAt: new Date().toISOString(), settings, entries: await store.listEntries(),
+    cards: store.listCards ? await store.listCards() : [] };
+}
+
+const iso = (v) => {
+  const d = new Date(v);
+  return v && !Number.isNaN(d.getTime()) ? d.toISOString() : null;
+};
+
+function cleanSched(x) {
+  if (!isObj(x) || !["new", "learning", "review"].includes(x.state)) return newSched();
+  const num = (v, d, lo, hi) => (Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
+  return { state: x.state, step: num(x.step, 0, 0, 1), due: iso(x.due), interval: num(x.interval, 0, 0, 36500),
+    ease: num(x.ease, 2.5, 1.3, 5), reps: num(x.reps, 0, 0, 1e6), lapses: num(x.lapses, 0, 0, 1e6), firstStudied: iso(x.firstStudied) };
+}
+
+function cleanCard(c) {
+  if (!isObj(c) || !["gap", "vocab", "manual"].includes(c.type)) return null;
+  const front = s(c.front, 500).trim();
+  const back = s(c.back, 500).trim();
+  if (!front || !back) return null;
+  return makeCard({ type: c.type, front, back, note: s(c.note, 2000), context: s(c.context, 2000),
+    sources: (Array.isArray(c.sources) ? c.sources : []).filter(Number.isInteger).slice(0, 200),
+    suspended: c.suspended === true, createdAt: iso(c.createdAt) || new Date().toISOString(), sched: cleanSched(c.sched) });
 }
 
 function cleanProvider(p) {
@@ -90,6 +115,7 @@ export function parseImport(obj) {
   const settings = cleanSettings(obj.settings);
   return {
     settings, entries, skipped: raw.length - entries.length,
+    cards: (Array.isArray(obj.cards) ? obj.cards : []).map(cleanCard).filter(Boolean).slice(0, 20000),
     hasKeys: (settings.providers || []).some((p) => p.apiKey),
   };
 }
@@ -127,6 +153,13 @@ export async function applyImport(store, parsed, { withKeys = false } = {}) {
       return idMap.has(old) ? { ...r, resultEntryId: idMap.get(old) } : r;
     });
     await store.putEntry(stored);
+  }
+  // Karten: Quellen auf neue IDs, unbekannte Quellen weg; gleiche Karten zusammenführen.
+  if (store.listCards && parsed.cards?.length) {
+    const incoming = parsed.cards.map((c) => ({ ...c, sources: c.sources.filter((id) => idMap.has(id)).map((id) => idMap.get(id)) }));
+    const { added: newCards, updated } = mergeCards(await store.listCards(), incoming);
+    for (const c of newCards) await store.addCard(c);
+    for (const c of updated) await store.putCard(c);
   }
   return { added: parsed.entries.length, skipped: parsed.skipped };
 }
