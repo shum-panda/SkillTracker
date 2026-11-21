@@ -2,8 +2,8 @@
 import { analyze, judgeRevision } from "../../core/ai.js";
 import { computeMetrics } from "../../core/metrics.js";
 import { computeScores, MIN_WORDS } from "../../core/scores.js";
-import { locateErrors, pattern } from "../../core/locate.js";
-import { applySentences, buildTasks, checkAnswer, recommendMode, summarizeRevision, STEPS_FROM } from "../../core/revision.js";
+import { locateErrors } from "../../core/locate.js";
+import { applySentences, buildTasks, checkAnswer, expectedSentence, recommendMode, summarizeRevision, STEPS_FROM } from "../../core/revision.js";
 import { categoryById, GROUPS } from "../../core/taxonomy.js";
 import { errorGroupCounts } from "../../core/stats.js";
 import { tokenize } from "../../core/text.js";
@@ -25,6 +25,7 @@ export async function render(root, ctx, [idParam]) {
   const edits = {};          // Satz-Index → bearbeiteter Satz
   const results = [];        // {errorIndex, category, outcome, answer}
   let mode = null;
+  let stepSeq = 0;
   const back = `<a href="#/e/${e.id}" class="small">← zurück zum Ergebnis</a>`;
 
   const current = (si) => (Object.hasOwn(edits, si) ? edits[si] : built.sentences[si].text);
@@ -34,7 +35,7 @@ export async function render(root, ctx, [idParam]) {
     const rec = recommendMode(errors.length);
     root.innerHTML = `
       <div class="head">${back}<p class="kicker">Überarbeiten</p><h1>${esc(e.topic || "Dein Text")}</h1>
-        <p>${errors.length ? `${errors.length} ${errors.length === 1 ? "Fehler" : "Fehler"} zum Verbessern.` : "Keine Fehler gefunden – du kannst den Text trotzdem umschreiben."}
+        <p>${errors.length ? `${errors.length} ${"Fehler"} zum Verbessern.` : "Keine Fehler gefunden – du kannst den Text trotzdem umschreiben."}
         Die Lösungen siehst du nur, wenn du sie aufdeckst.</p></div>
       <div class="row">${Object.entries(GROUPS).map(([g, info]) => `<span class="group-key"><i class="${g}"></i>${esc(info.label)} ${counts[g]}</span>`).join("")}</div>
       <div class="grid two">
@@ -63,10 +64,13 @@ export async function render(root, ctx, [idParam]) {
     const err = errors[t.errorIndex];
     const cat = categoryById(t.category);
     const sentence = current(t.sentenceIndex);
-    if (!new RegExp(pattern(t.quote), "iu").test(sentence)) {
+    if (!locateErrors(sentence, [err]).length) {
       results.push({ errorIndex: t.errorIndex, category: t.category, outcome: "done", answer: sentence });
       return step(k + 1);
     }
+    const token = ++stepSeq;  // späte Antworten (KI fragen) einer alten Aufgabe werden ignoriert
+    let finished = false;
+    let asking = false;
     let hints = 0;
     let shown = false;
     const spans = locateErrors(sentence, [err]);
@@ -96,8 +100,10 @@ export async function render(root, ctx, [idParam]) {
       results.push({ errorIndex: t.errorIndex, category: t.category, outcome, answer: text });
     };
     const next = () => step(k + 1);
-    const success = (title, outcome, extra = "") => {
-      done(outcome, answer.value.trim());
+    const success = (title, outcome, extra = "", text = answer.value.trim()) => {
+      if (finished || token !== stepSeq) return;
+      finished = true;
+      done(outcome, text);
       for (const id of ["check", "hint", "show", "skip"]) $(id).disabled = true;
       answer.readOnly = true;
       $("feedback").innerHTML = `<div class="ok-box"><b>${esc(title)}</b>${extra}
@@ -115,16 +121,19 @@ export async function render(root, ctx, [idParam]) {
     };
     $("show").onclick = () => {
       shown = true;
-      const expected = sentence.replace(new RegExp(pattern(t.quote), "iu"), err.correction);
+      const expected = expectedSentence(sentence, t.quote, err.correction) ?? sentence;
       $("help").innerHTML = `<div class="hint-box"><p><b>Lösung:</b> <del>${esc(err.quote)}</del> → <ins>${esc(err.correction)}</ins></p>
         <p lang="en">${esc(expected)}</p><button class="btn small" id="take">Übernehmen</button></div>`;
       $("take").onclick = () => { answer.value = expected; $("check").click(); };
     };
     $("skip").onclick = () => {
+      if (finished || asking) return;
+      finished = true;
       results.push({ errorIndex: t.errorIndex, category: t.category, outcome: "skipped", answer: sentence });
       next();
     };
     $("check").onclick = () => {
+      if (finished || asking) return;
       const res = checkAnswer(sentence, t.quote, err.correction, answer.value);
       const outcome = shown ? "shown" : hints ? "hint" : "solo";
       if (res === "exact" || res === "fixed") return success(shown ? "Übernommen." : "Richtig!", outcome);
@@ -135,19 +144,29 @@ export async function render(root, ctx, [idParam]) {
       $("feedback").innerHTML = `<div class="note"><p><b>Noch nicht ganz</b> – oder du hast eine andere richtige Lösung gefunden.</p>
         <div class="row">${provider ? '<button class="btn small" id="ask">KI fragen</button>' : ""}
         <button class="btn small ghost" id="self">Meine Lösung stimmt auch</button></div><div id="ai"></div></div>`;
-      $("self").onclick = () => success("Als richtig gezählt.", shown ? "shown" : "self");
+      $("self").onclick = () => { if (!asking) success("Als richtig gezählt.", shown ? "shown" : "self"); };
       if (provider) {
         $("ask").onclick = async () => {
-          $("ask").disabled = true;
-          $("ai").innerHTML = `<div class="row muted small">${spinner}<span>KI prüft …</span></div>`;
+          if (asking || finished) return;
+          asking = true;
+          const asked = answer.value.trim();
+          const lock = ["check", "show", "skip", "ask", "self"].map((id) => $(id)).filter(Boolean);
+          for (const b of lock) b.disabled = true;
+          answer.readOnly = true;
+          const aiBox = $("ai");
+          aiBox.innerHTML = `<div class="row muted small">${spinner}<span>KI prüft …</span></div>`;
+          let verdict = null;
           try {
-            const r = await judgeRevision(provider, { sentence, answer: answer.value.trim(), quote: t.quote, correction: err.correction, category: t.category });
-            if (r.correct) success("Die KI sagt: richtig!", shown ? "shown" : "ai", `<p class="small">${esc(r.feedback)}</p>`);
-            else $("ai").innerHTML = `<p class="small"><b>KI:</b> ${esc(r.feedback)}</p>`;
+            verdict = await judgeRevision(provider, { sentence, answer: asked, quote: t.quote, correction: err.correction, category: t.category });
           } catch (er) {
-            $("ai").innerHTML = `<p class="small">${errorText(er)}</p>`;
+            if (token === stepSeq) aiBox.innerHTML = `<p class="small">${errorText(er)}</p>`;
           }
-          if ($("ask")) $("ask").disabled = false;
+          asking = false;
+          if (token !== stepSeq || finished) return; // inzwischen weiter
+          if (verdict?.correct) return success("Die KI sagt: richtig!", shown ? "shown" : "ai", `<p class="small">${esc(verdict.feedback)}</p>`, asked);
+          if (verdict) aiBox.innerHTML = `<p class="small"><b>KI:</b> ${esc(verdict.feedback)}</p>`;
+          for (const b of lock) b.disabled = false;
+          answer.readOnly = false;
         };
       }
     };
@@ -199,29 +218,36 @@ export async function render(root, ctx, [idParam]) {
         <p class="small muted">${provider ? "Neu bewerten legt einen neuen Text an und zeigt dir vorher gegen nachher." : "Zum Neubewerten brauchst du eine verbundene KI."}</p>
       </section>`;
     const $ = (id) => root.querySelector(`#${id}`);
-    const record = () => ({ createdAt: new Date().toISOString(), mode, tasks: results, revisedText: $("final").value });
-    const saveRevision = async (extra = {}) => {
+    const status = $("status");
+    const buttons = [$("rate"), $("save")];
+    // Momentaufnahme vor jedem await – die Seite kann inzwischen verlassen worden sein.
+    const record = () => ({ createdAt: new Date().toISOString(), mode, tasks: [...results], revisedText: $("final").value });
+    const saveRevision = async (rec) => {
       const fresh = await store.getEntry(e.id);
-      fresh.revisions = [...(fresh.revisions || []), { ...record(), ...extra }];
+      fresh.revisions = [...(fresh.revisions || []), rec];
       await store.putEntry(fresh);
     };
     $("save").onclick = async () => {
+      for (const b of buttons) b.disabled = true;
       try {
-        await saveRevision();
+        await saveRevision(record());
         ctx.toast("Überarbeitung gespeichert.");
         ctx.navigate(`#/e/${e.id}`);
       } catch (er) {
-        $("status").innerHTML = `<p class="note">${errorText(er)}</p>`;
+        status.innerHTML = `<p class="note">${errorText(er)}</p>`;
+        buttons[1].disabled = false;
+        buttons[0].disabled = !provider;
       }
     };
     $("rate").onclick = async () => {
       const text = $("final").value.trim();
       if (tokenize(text).length < MIN_WORDS) {
-        $("status").innerHTML = `<p class="note">Zu kurz – mindestens ${MIN_WORDS} Wörter.</p>`;
+        status.innerHTML = `<p class="note">Zu kurz – mindestens ${MIN_WORDS} Wörter.</p>`;
         return;
       }
-      for (const id of ["rate", "save"]) $(id).disabled = true;
-      $("status").innerHTML = `<div class="row muted">${spinner}<span>Wird bewertet … meist 10–40 Sekunden.</span></div>`;
+      const rec = { ...record(), revisedText: text };
+      for (const b of buttons) b.disabled = true;
+      status.innerHTML = `<div class="row muted">${spinner}<span>Wird bewertet … meist 10–40 Sekunden.</span></div>`;
       try {
         const [freq, analysis] = await Promise.all([ctx.loadFreq(), analyze(provider, text, e.topic)]);
         const metrics = computeMetrics(text, freq);
@@ -230,12 +256,16 @@ export async function render(root, ctx, [idParam]) {
           scores: computeScores(metrics, analysis), model: { ocr: "", analysis: provider.model }, revisionOf: e.id,
           revisions: [], schemaVersion: 1,
         });
-        await saveRevision({ resultEntryId: newId, revisedText: text });
+        await saveRevision({ ...rec, resultEntryId: newId });
         if (location.hash === `#/e/${e.id}/revise` && ctx.store === store) ctx.navigate(`#/e/${newId}`);
         else ctx.toast("Neubewertung fertig – zu finden in der Übersicht.");
       } catch (er) {
-        $("status").innerHTML = `<p class="note">${errorText(er)}<br>Deine Fassung bleibt im Feld.</p>`;
-        for (const id of ["rate", "save"]) $(id).disabled = false;
+        if (document.body.contains(status)) {
+          status.innerHTML = `<p class="note">${errorText(er)}<br>Deine Fassung bleibt im Feld.</p>`;
+          for (const b of buttons) b.disabled = false;
+        } else {
+          ctx.toast(`Neubewertung fehlgeschlagen: ${er?.message || er}`);
+        }
       }
     };
   }

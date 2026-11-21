@@ -54,6 +54,7 @@ export async function render(root, ctx) {
         <label class="btn" for="photo" id="photo-label">Fotos aufnehmen oder wählen</label>
         <input class="sr-only" type="file" id="photo" accept="image/*" multiple>
         <ol class="pages" id="pages" aria-label="Seiten in Lesereihenfolge"></ol>
+        <p class="small note hidden" id="pages-note">Seiten mit „nur Vorschau“ stammen von einem früheren Besuch – zum Einlesen neu hinzufügen oder entfernen.</p>
         <button class="btn" id="read" disabled>Text einlesen</button>
         <p class="small muted">${ocr ? `Einlesen mit ${esc(ocr.name)} · ${esc(ocr.model)}` : "Zum Einlesen brauchst du eine KI, die Bilder versteht."}</p>
       </section>
@@ -86,6 +87,7 @@ export async function render(root, ctx) {
     $("photo-label").textContent = n ? "Weitere Seite hinzufügen" : "Fotos aufnehmen oder wählen";
     $("photo-label").classList.toggle("hidden", n >= MAX_PAGES);
     $("read").textContent = n > 1 ? `${n} Seiten einlesen` : "Text einlesen";
+    $("pages-note").classList.toggle("hidden", !pages.some((p) => !p.base64));
   };
   const updateCount = () => {
     const n = tokenize(textEl.value).length;
@@ -142,6 +144,11 @@ export async function render(root, ctx) {
 
   $("photo").addEventListener("change", async (ev) => {
     const files = [...(ev.target.files || [])];
+    if (ocrController) {
+      ev.target.value = "";
+      status.innerHTML = "<p class=\"note\">Bitte warte, bis das Einlesen fertig ist, und füge die Seite danach hinzu.</p>";
+      return;
+    }
     ev.target.value = "";
     if (!files.length) return;
     const prepared = [];

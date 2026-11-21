@@ -97,3 +97,34 @@ test("Import: revisions geprüft, Verweise auf neue IDs umgeschrieben", async ()
   assert.equal(orig.revisions[0].resultEntryId, rev.id);
   assert.equal(all.filter((e) => e.revisionOf !== undefined).length, 1, "Verweis auf unbekannte ID verworfen");
 });
+
+import { expectedSentence } from "../app/core/revision.js";
+
+test("Prüfung #1: Groß/klein und Satzzeichen sind lösbar", () => {
+  assert.equal(checkAnswer("on monday i go.", "i", "I", "on monday I go."), "exact");
+  assert.equal(checkAnswer("I like it", "it", "it.", "I like it."), "exact");
+  assert.equal(checkAnswer("Nice word , really.", "word ,", "word,", "Nice word, really."), "exact");
+  assert.equal(checkAnswer("on monday i go.", "i", "I", "on monday i go."), "unchanged");
+});
+
+test("Prüfung #2: erwarteter Satz ersetzt die richtige Stelle, nie mitten im Wort, kein $-Ersatz", () => {
+  assert.equal(expectedSentence("He goes home and he go out.", "go", "goes"), "He goes home and he goes out.");
+  assert.equal(expectedSentence("I have a apple.", "a", "an"), "I have an apple.");
+  assert.equal(expectedSentence("Pay me.", "me", "$& $1"), "Pay $& $1.");
+  assert.equal(expectedSentence("Nothing here.", "zzz", "x"), null);
+});
+
+test("Prüfung #3: nur die Fehlerstelle zählt", () => {
+  assert.equal(checkAnswer("I have a apple.", "a", "an", "I have a apple, and more."), "different");
+  assert.equal(checkAnswer("He goes home and he go out.", "he go", "he goes", "He goes home and he go out now."), "different");
+  assert.equal(checkAnswer("This is wrong.", "is", "are", "This are wrong."), "exact");
+  assert.equal(checkAnswer("This is wrong.", "is", "are", "These are wrong."), "fixed");
+  assert.equal(checkAnswer("I go today to school.", "to", "", "I go today school."), "exact");
+  assert.equal(checkAnswer("I want go home.", "want go", "want to go", "I really want to go home."), "fixed");
+});
+
+test("Sätze: Abkürzungen mit Einzelbuchstaben, einfacher Zeilenumbruch trennt nicht", () => {
+  const t = "We met in the U.S. last year. It was\ngreat (e.g. food).\n\nNew part.";
+  assert.deepEqual(sentenceSpans(t).map((s) => t.slice(s.start, s.end)),
+    ["We met in the U.S. last year.", "It was\ngreat (e.g. food).", "New part."]);
+});

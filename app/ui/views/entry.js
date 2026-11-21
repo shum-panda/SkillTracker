@@ -30,7 +30,7 @@ export async function render(root, ctx, [idParam]) {
 export async function renderEntry(root, ctx, e, all, { unsaved = false } = {}) {
   // Überarbeitete Fassung: Vergleich mit dem Original statt mit dem Schnitt.
   const original = e.revisionOf ? all.find((x) => x.id === e.revisionOf) : null;
-  const before = original ? [original] : all.filter((x) => x.createdAt < e.createdAt && !x.revisionOf).slice(0, 5);
+  const before = original ? [original] : all.filter((x) => x.createdAt < e.createdAt).slice(0, 5);
   const avg = original ? original.scores : averageScores(before);
   const compareLabel = original ? "vorher (Original)" : `dein Schnitt davor (${before.length})`;
   const revisions = Array.isArray(e.revisions) ? e.revisions : [];

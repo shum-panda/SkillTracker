@@ -4,7 +4,14 @@ import { categoryById, categoryRank } from "./taxonomy.js";
 
 const ABBR = new Set(["e.g.", "i.e.", "mr.", "mrs.", "ms.", "dr.", "etc.", "vs."]);
 
-// Sätze als {start, end} (ohne führenden/abschließenden Leerraum). Enden an .!? vor Leerraum/Ende und an Zeilenumbrüchen.
+// Abkürzung? Bekannte Liste oder Folge von Einzelbuchstaben mit Punkt (U.S., e.g.), auch mit Klammer davor.
+const isAbbr = (word) => {
+  const w = word.replace(/^[("'“‘[]+/, "").toLowerCase();
+  return ABBR.has(w) || /^(?:\p{L}\.){2,}$/u.test(w);
+};
+
+// Sätze als {start, end} (ohne führenden/abschließenden Leerraum). Enden an .!? vor Leerraum/Ende und an Leerzeilen;
+// ein einzelner Zeilenumbruch (z. B. Zeilenende auf dem Blatt) trennt keinen Satz.
 export function sentenceSpans(text) {
   const src = String(text || "");
   const out = [];
@@ -19,7 +26,7 @@ export function sentenceSpans(text) {
       if (i < src.length && !/\s/.test(ch)) start = i;
       continue;
     }
-    if (i === src.length || ch === "\n") {
+    if (i === src.length || (ch === "\n" && /^\n[ \t]*\n/.test(src.slice(i)))) {
       push(start, i);
       start = null;
       continue;
@@ -28,8 +35,8 @@ export function sentenceSpans(text) {
       let j = i;
       while (/[.!?]/.test(src[j + 1] || "")) j++;
       if (j + 1 >= src.length || /\s/.test(src[j + 1])) {
-        const word = (src.slice(start, j + 1).match(/(\S+)$/)?.[1] || "").toLowerCase();
-        if (!ABBR.has(word)) {
+        const word = src.slice(start, j + 1).match(/(\S+)$/)?.[1] || "";
+        if (!isAbbr(word)) {
           push(start, j + 1);
           start = null;
         }
@@ -68,25 +75,54 @@ export function buildTasks(text, errors) {
   };
 }
 
-const norm = (s) => String(s || "").toLowerCase().replace(/[’‘`]/g, "'").replace(/\s+/g, " ")
-  .replace(/\s+([.,!?;:])/g, "$1").replace(/[\s.,!?;:]+$/, "").trim();
+// Leerraum zusammenfassen, Apostrophe vereinheitlichen – Groß/klein und Satzzeichen bleiben (können der Fehler sein).
+const loose = (s) => String(s || "").replace(/[’‘`]/g, "'").replace(/\s+/g, " ").trim();
+const LETTER = /\p{L}/u;
 
-function replaceQuote(sentence, quote, correction) {
-  const re = new RegExp(pattern(quote), "iu");
-  return re.test(sentence) ? sentence.replace(re, correction) : null;
+function containsWord(hay, needle, caseSensitive) {
+  const n = String(needle || "").trim();
+  if (!n) return false;
+  const src = (LETTER.test(n[0]) ? "(?<!\\p{L})" : "") + pattern(n) + (LETTER.test(n.at(-1)) ? "(?!\\p{L})" : "");
+  return new RegExp(src, caseSensitive ? "u" : "iu").test(hay);
 }
 
-// "exact" = wie erwartet · "fixed" = Fehler weg, Korrektur drin · "unchanged" · "different"
+// Der Satz, wie er mit der Korrektur an genau der Fehlerstelle aussähe (nie mitten im Wort); null, wenn nicht gefunden.
+export function expectedSentence(sentence, quote, correction) {
+  const sp = locateErrors(sentence, [{ quote }])[0];
+  if (!sp) return null;
+  return (sentence.slice(0, sp.start) + correction + sentence.slice(sp.end)).replace(/ {2,}/g, " ").replace(/ +([.,!?;:])/g, "$1");
+}
+
+// "exact" = wie erwartet · "fixed" = an der Fehlerstelle richtig umformuliert · "unchanged" · "different"
+// Geprüft wird nur der Bereich, den die Antwort gegenüber dem Original verändert hat (rund um die Fehlerstelle).
 export function checkAnswer(sentence, quote, correction, answer) {
-  const a = norm(answer);
-  if (!a || a === norm(sentence)) return "unchanged";
-  const expected = replaceQuote(sentence, quote, correction);
-  if (expected !== null && a === norm(expected)) return "exact";
-  const q = norm(quote);
-  const c = norm(correction);
-  const quoteGone = c.includes(q) || !a.includes(q);
-  const correctionIn = !c || a.includes(c);
-  return quoteGone && correctionIn && c !== q ? "fixed" : "different";
+  const S = loose(sentence);
+  const A = loose(answer);
+  if (!A || A === S) return "unchanged";
+  const fold = (s) => loose(s).toLowerCase();
+  const caseErr = fold(quote) === fold(correction);   // der Fehler ist Groß/klein → genau vergleichen
+  const keepEnd = /[.!?]\s*$/.test(quote) || /[.!?]\s*$/.test(correction);
+  const end = (s) => (keepEnd ? s : s.replace(/[\s.!?]+$/, ""));
+  const same = (x, y) => (caseErr ? end(x) === end(y) : end(x).toLowerCase() === end(y).toLowerCase());
+  const E = expectedSentence(S, quote, correction);
+  if (E !== null && same(A, loose(E))) return "exact";
+
+  const sp = locateErrors(S, [{ quote }])[0];
+  let middle = A;
+  if (sp) {
+    let p = 0;
+    while (p < sp.start && p < A.length && A[p] === S[p]) p++;
+    while (p > 0 && !/\s/.test(S[p - 1])) p--;           // auf Wortgrenze zurück
+    let s = 0;
+    const maxS = S.length - sp.end;
+    while (s < maxS && s < A.length - p && A[A.length - 1 - s] === S[S.length - 1 - s]) s++;
+    while (s > 0 && !/\s/.test(S[S.length - s])) s--;      // Rest beginnt an einer Wortgrenze
+    middle = A.slice(p, A.length - s);
+  }
+  const hasQuote = containsWord(middle, quote, caseErr);
+  const hasCorrection = !String(correction).trim() || containsWord(middle, correction, caseErr);
+  const correctionHasQuote = containsWord(correction, quote, caseErr);
+  return hasCorrection && (!hasQuote || correctionHasQuote) ? "fixed" : "different";
 }
 
 // Setzt bearbeitete Sätze (Index → neuer Text) in den Originaltext ein; Abstände dazwischen bleiben.
