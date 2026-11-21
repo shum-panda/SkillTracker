@@ -85,13 +85,13 @@ export async function mergeSnapshot(store, snap, { confirmDeletions = null, acce
     const newSpeaking = (clean.speaking || []).filter((x) => !spoken.has(`${x.createdAt}|${x.method}`));
     if (newSpeaking.length) {
       have.speaking = [...(have.speaking || []), ...newSpeaking].sort((p, q) => p.createdAt.localeCompare(q.createdAt)).slice(-50);
-      await store.putEntry(have);
-      stats.entriesUpdated++;
     }
     const known = new Set((have.revisions || []).map(revKey));
     const extra = strip(clean).revisions.filter((r) => !known.has(revKey(r)));
     if (extra.length) {
       have.revisions = [...(have.revisions || []), ...extra].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(-50);
+    }
+    if (newSpeaking.length || extra.length) {
       await store.putEntry(have);
       stats.entriesUpdated++;
     }

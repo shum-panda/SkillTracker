@@ -53,3 +53,17 @@ export function speakingSentences(entry, source = "improved") {
   } else text = entry?.text || "";
   return sentenceSpans(text).map((s) => text.slice(s.start, s.end).replace(/\s+/g, " ").trim()).filter((s) => words(s).length);
 }
+
+// Satz in Wörter und Zwischenräume zerlegen – dieselben Wörter wie alignWords, damit die Markierung passt.
+export function splitWords(sentence) {
+  const s = String(sentence || "");
+  const out = [];
+  let pos = 0;
+  for (const m of s.matchAll(WORD)) {
+    if (m.index > pos) out.push({ text: s.slice(pos, m.index), word: false });
+    out.push({ text: m[0], word: true });
+    pos = m.index + m[0].length;
+  }
+  if (pos < s.length) out.push({ text: s.slice(pos), word: false });
+  return out;
+}

@@ -103,3 +103,13 @@ test("Apostrophe zählen beim Hören nicht (Spracherkennung schreibt sie selten)
   assert.equal(r.score, 100);
   assert.deepEqual(r.missed, []);
 });
+
+import { splitWords } from "../app/core/speech.js";
+
+test("splitWords: Wörter und Zwischenräume passend zu alignWords (Kontraktionen, &, Satzzeichen)", () => {
+  const s = "I don't know & you're fine.";
+  const parts = splitWords(s);
+  assert.equal(parts.map((p) => p.text).join(""), s, "nichts geht verloren");
+  assert.deepEqual(parts.filter((p) => p.word).map((p) => p.text), ["I", "don't", "know", "you're", "fine"]);
+  assert.equal(parts.filter((p) => p.word).length, alignWords(s, "").tokens.length);
+});
