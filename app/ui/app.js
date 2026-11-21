@@ -13,7 +13,10 @@ import * as settings from "./views/settings.js";
 import * as learn from "./views/learn.js";
 import { syncCards } from "../core/cards.js";
 
+import * as train from "./views/train.js";
+
 const learnSession = { render: learn.renderSession };
+const trainSession = { render: train.renderSession };
 
 const root = document.getElementById("app");
 const banner = document.getElementById("banner");
@@ -102,6 +105,8 @@ const ROUTES = [
   [/^#\/history$/, historyView, "history"],
   [/^#\/settings$/, settings, "settings"],
   [/^#\/learn$/, learn, "learn"],
+  [/^#\/train$/, train, "learn"],
+  [/^#\/train\/([a-z_]+)$/, trainSession, "learn"],
   [/^#\/learn\/session$/, learnSession, "learn"],
 ];
 

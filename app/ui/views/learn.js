@@ -4,6 +4,7 @@ import { locateErrors } from "../../core/locate.js";
 import { buildQueue, DEFAULT_NEW_PER_DAY, dueDayIndex, forecast, intervalLabel, schedule, studiedNewToday } from "../../core/srs.js";
 import { closeModal, confirmDialog, esc, openModal } from "../dom.js";
 import { highlightHtml } from "../highlight.js";
+import { profileFor, weaknessListHtml } from "./train.js";
 
 const TYPE_LABEL = { gap: "fehlendes Wort", vocab: "Wortschatz", manual: "eigene Karte" };
 const GRADES = [["again", "Nochmal"], ["hard", "Schwer"], ["good", "Gut"], ["easy", "Leicht"]];
@@ -104,8 +105,12 @@ export async function render(root, ctx) {
   const shown = cards.filter((c) => filter === "all" || (filter === "paused" ? c.suspended : !c.suspended && c.sched.state === filter));
   const counts = { all: cards.length, new: 0, learning: 0, review: 0, paused: 0 };
   for (const c of cards) counts[c.suspended ? "paused" : c.sched.state]++;
+  const weak = await profileFor(store);
 
   root.innerHTML = `
+    ${weak.length ? `<section class="card">
+      <div class="row between"><div><p class="kicker">Grammatik-Training</p><h2>Deine Baustellen</h2></div><a href="#/train">Alle ansehen</a></div>
+      ${weaknessListHtml(weak, { limit: 3 })}</section>` : ""}
     <div class="head row between"><div><p class="kicker">Lernen</p><h1>Deine Karteikarten</h1></div>
       <button class="btn primary" id="start" ${q.due.length + q.fresh.length + q.ahead.length ? "" : "disabled"}>Lernen starten</button></div>
     ${!cards.length ? `<div class="card"><p>Noch keine Karten. Sie entstehen automatisch aus deinen Texten: aus Wörtern, die dir gefehlt haben

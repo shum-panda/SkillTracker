@@ -73,6 +73,10 @@ for (const scheme of ["light", "dark"]) {
     await sleep(500);
     await js("document.getElementById('flip')?.click()");
     await shot(`${p}-session`);
+    await js("location.hash = '#/train'");
+    await shot(`${p}-train`);
+    await js("location.hash = '#/train/past_simple'");
+    await shot(`${p}-drill`);
     await js("location.hash = '#/settings'");
     await shot(`${p}-settings`);
   }

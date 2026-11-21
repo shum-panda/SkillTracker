@@ -304,3 +304,18 @@ textarea.answer { min-height: 96px; }
 @media (hover: hover) and (min-width: 760px) { .kbd { display: inline; } .btn .kbd { margin-left: 6px; } .btn.grade .kbd { margin: 2px 0 0; } }
 .due-banner { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 .tabbar a { font-size: 11px; }
+.weak-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
+.weak-list .row b { font-size: 16px; }
+.weak-list .bar { margin: 6px 0 4px; }
+.weak-list p { margin: 0; }
+.chip.trend-better { background: color-mix(in srgb, var(--ok) 14%, var(--surface)); color: var(--ok); border-color: transparent; }
+.chip.trend-worse { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.drill-prompt { font-size: 20px; line-height: 1.6; margin: 0; }
+.drill-prompt .gap { display: inline-block; min-width: 3em; border-bottom: 2px solid var(--accent-text); color: transparent; }
+.choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+.btn.choice { min-height: 52px; font-size: 17px; }
+.btn.choice.picked-ok { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, var(--surface)); color: var(--ok); }
+.btn.choice.picked-bad { border-color: var(--bad); color: var(--bad); }
+.btn.choice:disabled { opacity: 1; cursor: default; }
+input#answer { font-size: 18px; }
+.weak-list .group-key { margin-right: 8px; vertical-align: -1px; }

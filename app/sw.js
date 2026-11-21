@@ -1,11 +1,11 @@
 /* Service Worker: App-Hülle und Wortliste offline. Anfragen an KI-Anbieter (fremde Adressen) werden nie angefasst. */
-const CACHE = "skilltracker-v4";
+const CACHE = "skilltracker-v5";
 const SHELL = [
   "./", "index.html", "styles.css", "manifest.webmanifest", "fonts/fonts.css", "icons/logo.svg", "icons/icon-192.png",
   "data/wordfreq-en.json",
   "ui/app.js", "ui/dom.js", "ui/charts.js", "ui/image.js", "ui/highlight.js",
-  "ui/views/home.js", "ui/views/new.js", "ui/views/entry.js", "ui/views/history.js", "ui/views/settings.js", "ui/views/revise.js", "ui/views/learn.js",
-  "core/ai.js", "core/backup.js", "core/demo.js", "core/pages.js", "core/revision.js", "core/cards.js", "core/srs.js", "core/freq.js", "core/html.js", "core/locate.js", "core/metrics.js",
+  "ui/views/home.js", "ui/views/new.js", "ui/views/entry.js", "ui/views/history.js", "ui/views/settings.js", "ui/views/revise.js", "ui/views/learn.js", "ui/views/train.js",
+  "core/ai.js", "core/backup.js", "core/demo.js", "core/pages.js", "core/revision.js", "core/cards.js", "core/srs.js", "core/weakness.js", "core/drill.js", "core/freq.js", "core/html.js", "core/locate.js", "core/metrics.js",
   "core/prompts.js", "core/schema.js", "core/scores.js", "core/stats.js", "core/store.js", "core/store-idb.js",
   "core/taxonomy.js", "core/text.js",
   "core/providers/index.js", "core/providers/anthropic.js", "core/providers/openai.js", "core/providers/gemini.js",
