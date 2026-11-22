@@ -6,7 +6,7 @@ import { learningDayKey, newSched } from "../app/core/srs.js";
 import { sessionMinutes, writeDays, isWriteDay, estimates, planToday, planForDay, recommendation } from "../app/core/plan.js";
 import { GOOD } from "./fixtures.mjs";
 
-const NOW = new Date(2026, 10, 20, 18, 0); // Donnerstag
+const NOW = new Date(2026, 10, 20, 18, 0); // Freitag
 const TODAY = learningDayKey(NOW);
 const prof = (o = {}) => ({ ...defaultProfile(), ...o });
 // aktive Tage: offsets relativ zu heute (−1 = gestern)
@@ -47,7 +47,7 @@ const entry = (id, createdAt, extra = {}) => ({ id, createdAt, text: "Some text.
 
 test("Schreibtag: verpasster rückt nach", () => {
   const p = prof({ writesPerWeek: 2 });
-  assert.equal(isWriteDay({ profile: p, entries: [], now: NOW }), true, "Donnerstag, noch kein Text");
+  assert.equal(isWriteDay({ profile: p, entries: [], now: NOW }), true, "Freitag, noch kein Text (Montag und Donnerstag offen)");
   const tue = new Date(2026, 10, 17, 18, 0);
   assert.equal(isWriteDay({ profile: p, entries: [], now: tue }), true, "Montag verpasst");
   assert.equal(isWriteDay({ profile: p, entries: [entry(1, new Date(2026, 10, 16, 12).toISOString())], now: tue }), false);

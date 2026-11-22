@@ -19,6 +19,9 @@
   --g-vocabulary: #A15C00; --g-vocabulary-soft: #FFEFD6;
   --g-mechanics: #2F6DB5; --g-mechanics-soft: #E2EDFA;
   --ok: #2F7A4F; --warn: #8A5300; --warn-soft: #FFF1D6; --bad: #B3261E;
+  /* Teil 7 (Lernbegleiter): Lila. Heatmap-Stufen geprüft mit validate_palette.js --ordinal */
+  --violet: #6D28D9; --violet-ink: #FFFFFF; --violet-text: #5B21B6; --violet-soft: #EFE9FD;
+  --hm-0: #EEF2F1; --hm-1: #A78BFA; --hm-2: #8B5CF6; --hm-3: #6D28D9; --hm-4: #4C1D95;
   --f-display: "Bricolage Grotesque", "Trebuchet MS", Arial, sans-serif;
   --f-body: "Figtree", "Segoe UI", Arial, sans-serif;
   --f-mono: "DM Mono", Consolas, monospace;
@@ -33,6 +36,8 @@
     --g-grammar: #FF8A80; --g-grammar-soft: #3A1C1A; --g-structure: #C3A6F2; --g-structure-soft: #2A2140;
     --g-vocabulary: #F2C063; --g-vocabulary-soft: #33270F; --g-mechanics: #8DB8F0; --g-mechanics-soft: #172638;
     --ok: #7FD1A0; --warn: #F2C063; --warn-soft: #33270F; --bad: #FF8A80;
+    --violet: #A78BFA; --violet-ink: #1B0B3A; --violet-text: #C4B5FD; --violet-soft: #251C3D;
+    --hm-0: #252B2B; --hm-1: #5B3FB0; --hm-2: #7C5CE0; --hm-3: #A78BFA; --hm-4: #D8CCFF;
     color-scheme: dark;
   }
 }
@@ -43,6 +48,8 @@
   --g-grammar: #FF8A80; --g-grammar-soft: #3A1C1A; --g-structure: #C3A6F2; --g-structure-soft: #2A2140;
   --g-vocabulary: #F2C063; --g-vocabulary-soft: #33270F; --g-mechanics: #8DB8F0; --g-mechanics-soft: #172638;
   --ok: #7FD1A0; --warn: #F2C063; --warn-soft: #33270F; --bad: #FF8A80;
+  --violet: #A78BFA; --violet-ink: #1B0B3A; --violet-text: #C4B5FD; --violet-soft: #251C3D;
+  --hm-0: #252B2B; --hm-1: #5B3FB0; --hm-2: #7C5CE0; --hm-3: #A78BFA; --hm-4: #D8CCFF;
   color-scheme: dark;
 }
 
@@ -330,3 +337,19 @@ input#answer { font-size: 18px; }
 .btn.recording { background: var(--bad); border-color: transparent; color: #fff; box-shadow: 0 0 0 4px color-mix(in srgb, var(--bad) 25%, transparent); }
 .btn.rate.chosen { border-color: var(--accent-text); background: var(--accent-soft); }
 .speak-score { font: 700 28px var(--f-display); color: var(--accent-text); }
+
+/* Heatmap (Teil 7) */
+.heatmap { display: grid; gap: 8px; }
+.hm-svg { width: 100%; max-width: 560px; height: auto; display: block; }
+.hm-label { font: 9px var(--f-mono); fill: var(--muted); }
+.hm { fill: var(--hm-0); cursor: pointer; }
+.hm.l1, .hm-key.l1 { fill: var(--hm-1); background: var(--hm-1); }
+.hm.l2, .hm-key.l2 { fill: var(--hm-2); background: var(--hm-2); }
+.hm.l3, .hm-key.l3 { fill: var(--hm-3); background: var(--hm-3); }
+.hm.l4, .hm-key.l4 { fill: var(--hm-4); background: var(--hm-4); }
+.hm.today { stroke: var(--ink); stroke-width: 1.5; }
+.hm:hover { stroke: var(--violet); stroke-width: 1.5; }
+.hm-key { display: inline-block; width: 11px; height: 11px; border-radius: 2px; background: var(--hm-0); vertical-align: -1px; margin: 0 1px; }
+.hm-info { min-height: 1.4em; margin: 0; }
+.hm-table td { padding: 4px 0; border-bottom: 1px solid var(--line); }
+.hm-toggle { justify-self: start; }
