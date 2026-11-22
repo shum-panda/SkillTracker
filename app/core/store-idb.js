@@ -1,7 +1,7 @@
 // IndexedDB-Speicher (nur im Browser). Gleiche Schnittstelle wie MemoryStore.
 // Schreibvorgänge gelten erst als erledigt, wenn die Transaktion abgeschlossen ist (oncomplete) –
 // ein voller Speicher zeigt sich oft erst als Abbruch der Transaktion.
-import { sortEntries } from "./store.js";
+import { sortActivity, sortEntries } from "./store.js";
 
 export class IdbStore {
   constructor(db) {
@@ -14,7 +14,7 @@ export class IdbStore {
   static open(name = "skilltracker", { onBlocked = () => {}, onVersionChange = () => {} } = {}) {
     return new Promise((resolve, reject) => {
       if (!globalThis.indexedDB) return reject(new Error("IndexedDB nicht verfügbar"));
-      const r = indexedDB.open(name, 2); // 2: Karteikarten
+      const r = indexedDB.open(name, 3); // 2: Karteikarten, 3: Aktivität
       r.onupgradeneeded = () => {
         const db = r.result;
         if (!db.objectStoreNames.contains("settings")) db.createObjectStore("settings");
@@ -23,6 +23,9 @@ export class IdbStore {
         }
         if (!db.objectStoreNames.contains("cards")) {
           db.createObjectStore("cards", { keyPath: "id", autoIncrement: true }).createIndex("key", "key");
+        }
+        if (!db.objectStoreNames.contains("activity")) {
+          db.createObjectStore("activity", { keyPath: "uid" }).createIndex("day", "day");
         }
       };
       r.onsuccess = () => {
@@ -79,10 +82,20 @@ export class IdbStore {
   getCard(id) { return this.run("cards", "readonly", (tx) => tx.objectStore("cards").get(Number(id))); }
   async listCards() { return ((await this.run("cards", "readonly", (tx) => tx.objectStore("cards").getAll())) || []).sort((a, b) => a.id - b.id); }
   deleteCard(id) { return this.run("cards", "readwrite", (tx) => tx.objectStore("cards").delete(Number(id))).then(() => {}); }
+  addActivity(ev) { return this.run("activity", "readwrite", (tx) => tx.objectStore("activity").put(ev)).then(() => {}); }
+  async listActivity() { return sortActivity((await this.run("activity", "readonly", (tx) => tx.objectStore("activity").getAll())) || []); }
+  deleteActivity(uids) {
+    return this.run("activity", "readwrite", (tx) => {
+      let last;
+      for (const u of uids) last = tx.objectStore("activity").delete(u);
+      return last;
+    }).then(() => {});
+  }
   clearAll() {
-    return this.run(["settings", "entries", "cards"], "readwrite", (tx) => {
+    return this.run(["settings", "entries", "cards", "activity"], "readwrite", (tx) => {
       tx.objectStore("settings").clear();
       tx.objectStore("cards").clear();
+      tx.objectStore("activity").clear();
       return tx.objectStore("entries").clear();
     }).then(() => {});
   }

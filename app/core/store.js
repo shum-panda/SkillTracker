@@ -2,8 +2,11 @@
 //   getSetting(key) · setSetting(key, value) · addEntry(entry) -> id · putEntry(entry) · getEntry(id)
 //   listEntries() (neueste zuerst) · deleteEntry(id) · clearAll()
 //   addCard(card) -> id · putCard(card) · getCard(id) · listCards() (nach id) · deleteCard(id)
+//   addActivity(ev) (über uid) · listActivity() (nach at) · deleteActivity(uids)
 
 const clone = (v) => (v === undefined ? undefined : structuredClone(v));
+
+export const sortActivity = (list) => list.sort((a, b) => String(a.at).localeCompare(String(b.at)) || String(a.uid).localeCompare(String(b.uid)));
 
 export function sortEntries(list) {
   return list.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || b.id - a.id);
@@ -15,6 +18,7 @@ export class MemoryStore {
     this.settings = new Map();
     this.entries = new Map();
     this.cards = new Map();
+    this.activity = new Map();
     this.nextId = 1;
     this.nextCardId = 1;
   }
@@ -44,10 +48,14 @@ export class MemoryStore {
   async getCard(id) { return clone(this.cards.get(Number(id))); }
   async listCards() { return [...this.cards.values()].map(clone).sort((a, b) => a.id - b.id); }
   async deleteCard(id) { this.cards.delete(Number(id)); }
+  async addActivity(ev) { this.activity.set(ev.uid, clone(ev)); }
+  async listActivity() { return sortActivity([...this.activity.values()].map(clone)); }
+  async deleteActivity(uids) { for (const u of uids) this.activity.delete(u); }
   async clearAll() {
     this.settings.clear();
     this.entries.clear();
     this.cards.clear();
+    this.activity.clear();
     this.nextId = 1;
     this.nextCardId = 1;
   }

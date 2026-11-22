@@ -49,10 +49,15 @@ const time = (iso) => new Date(iso).getTime();
 
 // Ein Lerntag beginnt um 4 Uhr (wie bei Anki): Wer nach Mitternacht lernt, ist noch im alten Tag.
 const DAY_STARTS_AT = 4;
-function learningDayStart(d) {
+export function learningDayStart(d) {
   const s = new Date(d.getFullYear(), d.getMonth(), d.getDate(), DAY_STARTS_AT);
   if (d.getTime() < s.getTime()) s.setDate(s.getDate() - 1);
   return s;
+}
+// Lerntag als "YYYY-MM-DD" (Ortszeit).
+export function learningDayKey(d) {
+  const s = learningDayStart(d);
+  return `${s.getFullYear()}-${String(s.getMonth() + 1).padStart(2, "0")}-${String(s.getDate()).padStart(2, "0")}`;
 }
 const nextDayStart = (s) => new Date(s.getFullYear(), s.getMonth(), s.getDate() + 1, DAY_STARTS_AT).getTime();
 
