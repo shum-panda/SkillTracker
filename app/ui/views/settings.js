@@ -3,6 +3,7 @@ import { PROVIDER_TYPES, listModels, completeJSON } from "../../core/providers/i
 import { exportData, parseImport, applyImport } from "../../core/backup.js";
 import { esc, safeHttpsUrl } from "../../core/html.js";
 import { closeModal, confirmDialog, download, openModal, spinner } from "../dom.js";
+import { ALL_DAYS, GOALS, GOAL_LABEL, MINUTES, MOTIVATIONS, MOTIVATION_LABEL, WRITES, cleanProfile, defaultProfile } from "../../core/profile.js";
 
 const PING_SCHEMA = { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false };
 
@@ -92,7 +93,28 @@ function editProvider(ctx, existing, onSaved) {
   };
 }
 
+const DAY_SHORT = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+const sel = (id, list, cur, label) => `<select id="${id}">${list.map((v) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(label(v))}</option>`).join("")}</select>`;
+
+function planSectionHtml(p) {
+  return `<section class="card stack" id="plan-settings">
+      <h2>Lernplan &amp; Erinnerungen</h2>
+      <div class="grid two">
+        <div class="field"><label for="pf-goal">Ziel</label>${sel("pf-goal", GOALS, p.goal, (g) => GOAL_LABEL[g])}</div>
+        <div class="field"><label for="pf-mot">Motivation</label>${sel("pf-mot", MOTIVATIONS, p.motivation, (m) => MOTIVATION_LABEL[m])}</div>
+        <div class="field"><label for="pf-min">Zeit pro Tag</label>${sel("pf-min", MINUTES, p.minutes, (m) => `${m} Minuten`)}</div>
+        <div class="field"><label for="pf-writes">Texte pro Woche</label>${sel("pf-writes", WRITES, p.writesPerWeek, String)}</div>
+      </div>
+      <label class="check"><input type="checkbox" id="pf-rem" ${p.reminder.enabled ? "checked" : ""}> An den Lernplan erinnern</label>
+      <div class="row"><div class="field"><label for="pf-time">Uhrzeit</label><input type="time" id="pf-time" value="${esc(p.reminder.time)}"></div>
+        <div class="daypick" role="group" aria-label="Wochentage">${ALL_DAYS.map((d) => `<label class="chip"><input type="checkbox" value="${d}" ${p.reminder.days.includes(d) ? "checked" : ""}> ${DAY_SHORT[d]}</label>`).join("")}</div></div>
+      <div id="reminder-status"></div>
+      <a class="btn small" href="#/willkommen">Einführung noch einmal ansehen</a>
+    </section>`;
+}
+
 export async function render(root, ctx) {
+  const profile = (await ctx.store.getSetting("profile")) || defaultProfile();
   const providers = await ctx.providers();
   const ocrId = (await ctx.providerFor("ocr"))?.id;
   const anId = (await ctx.providerFor("analysis"))?.id;
@@ -121,6 +143,7 @@ export async function render(root, ctx) {
         <input type="text" id="speech-model" placeholder="whisper-1" value="${esc(speechModel)}">
         <div class="hint">Modell für OpenAI bzw. kompatible Server, z. B. whisper-1. Leer = whisper-1. Claude versteht kein Audio.</div></div>` : ""}
     </section>
+    ${planSectionHtml(profile)}
     <section class="card">
       <h2>Anzeige</h2>
       <label class="check"><input type="checkbox" id="improved" ${showImproved ? "checked" : ""}> Verbesserte Fassung anzeigen (zum Aufklappen)</label>
@@ -204,6 +227,19 @@ export async function render(root, ctx) {
     await ctx.store.setSetting("relayUrl", v);
     rerender();
   });
+  const saveProfile = async () => {
+    const days = [...root.querySelectorAll("#plan-settings .daypick input:checked")].map((x) => Number(x.value));
+    const next = cleanProfile({ ...profile, goal: $("pf-goal").value, motivation: $("pf-mot").value, minutes: Number($("pf-min").value),
+      writesPerWeek: Number($("pf-writes").value), reminder: { enabled: $("pf-rem").checked, time: $("pf-time").value || "19:00", days: days.length ? days : [...ALL_DAYS] },
+      updatedAt: new Date().toISOString() });
+    if (!next) return;
+    Object.assign(profile, next);
+    await ctx.store.setSetting("profile", next);
+    if (!ctx.demo) await ctx.reminders?.refresh?.().catch(() => {});
+    ctx.toast("Lernplan gespeichert.");
+  };
+  for (const el of root.querySelectorAll("#plan-settings select, #plan-settings input")) el.addEventListener("change", saveProfile);
+  await ctx.reminders?.renderStatus?.(root.querySelector("#reminder-status"));
   $("wipe").onclick = async () => {
     if (!(await confirmDialog("Alles löschen?", "Alle Texte, Bewertungen und Schlüssel auf diesem Gerät werden gelöscht. Das lässt sich nicht rückgängig machen.",
       { ok: "Alles löschen", danger: true }))) return;

@@ -50,3 +50,24 @@ test("Demo-Einträge: gültige Analysen, auffindbare Zitate, berechnete Werte", 
   const dates = list.map((e) => e.createdAt);
   assert.deepEqual([...dates].sort(), dates, "älteste zuerst");
 });
+
+// --- Teil 7: Onboarding ---
+import { onboardingDone, resultHtml, STEPS } from "../app/ui/views/welcome.js";
+import { MemoryStore } from "../app/core/store.js";
+import { defaultProfile } from "../app/core/profile.js";
+import { recommendation } from "../app/core/plan.js";
+
+test("Onboarding: fertig erst mit Profil; Ergebnis je nach KI", async () => {
+  const s = new MemoryStore();
+  assert.equal(await onboardingDone(s), false);
+  await s.setSetting("profile", defaultProfile());
+  assert.equal(await onboardingDone(s), true);
+  assert.deepEqual(STEPS, ["concept1", "concept2", "concept3", "goal", "level", "motivation", "reminder", "result"]);
+  const p = defaultProfile();
+  const without = resultHtml(p, false);
+  assert.match(without, /KI verbinden/);
+  assert.doesNotMatch(without, /Ersten Text schreiben/);
+  assert.match(resultHtml(p, true), /Ersten Text schreiben/);
+  assert.match(without, /Demo ansehen/);
+  assert.ok(without.includes(recommendation(p).text));
+});

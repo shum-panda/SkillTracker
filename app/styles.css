@@ -353,3 +353,26 @@ input#answer { font-size: 18px; }
 .hm-info { min-height: 1.4em; margin: 0; }
 .hm-table td { padding: 4px 0; border-bottom: 1px solid var(--line); }
 .hm-toggle { justify-self: start; }
+
+/* Onboarding und Lila-Akzent (Teil 7) */
+.kicker.violet { color: var(--violet-text); }
+.btn.primary.violet { background: var(--violet); color: var(--violet-ink); border-color: var(--violet); }
+.btn.link { border-color: transparent; background: transparent; color: var(--muted); }
+.onboarding { display: grid; gap: 18px; max-width: 720px; margin: 0 auto; }
+.onboarding .lead { font-size: 17px; }
+.dots { display: flex; gap: 6px; }
+.dots span { width: 18px; height: 4px; border-radius: 2px; background: var(--line); }
+.dots span.done { background: color-mix(in srgb, var(--violet) 45%, var(--line)); }
+.dots span.on { background: var(--violet); box-shadow: 0 0 8px color-mix(in srgb, var(--violet) 60%, transparent); }
+.concept { display: grid; gap: 16px; align-items: center; }
+@media (min-width: 640px) { .concept { grid-template-columns: 120px 1fr; } }
+.concept-icon { width: 96px; height: 96px; fill: var(--violet-soft); stroke: var(--violet); stroke-width: 3; stroke-linejoin: round; }
+.choices { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 8px; }
+.choice { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; background: var(--surface); }
+.choice span { display: grid; gap: 2px; }
+.choice:has(input:checked) { border-color: var(--violet); background: var(--violet-soft); }
+.choice input { accent-color: var(--violet); margin-top: 3px; }
+.daypick { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.daypick .chip { cursor: pointer; }
+.daypick input { accent-color: var(--violet); }
+.ob-nav { flex-wrap: wrap; gap: 8px; }
