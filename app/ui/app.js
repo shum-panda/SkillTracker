@@ -19,6 +19,7 @@ import * as speakView from "./views/speak.js";
 import * as welcome from "./views/welcome.js";
 import * as go from "./views/go.js";
 import { unitBarHtml } from "./unit.js";
+import { createReminders } from "./push.js";
 import { backfillActivity, pruneActivity } from "../core/activity.js";
 
 const learnSession = { render: learn.renderSession };
@@ -161,6 +162,8 @@ async function render() {
   window.scrollTo(0, 0);
 }
 
+ctx.reminders = createReminders(ctx);
+
 async function start() {
   await openStore();
   await ctx.applyTheme();
@@ -170,6 +173,15 @@ async function start() {
   await render();
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
     navigator.serviceWorker.register("sw.js").catch(() => {});
+    // Falls client.navigate nicht geht, schickt der Service Worker das Ziel einer Erinnerung als Nachricht.
+    navigator.serviceWorker.addEventListener("message", (ev) => {
+      const url = ev.data?.type === "go" ? String(ev.data.url || "") : "";
+      const hash = url.slice(url.indexOf("#"));
+      if (hash.startsWith("#/go/")) ctx.navigate(hash);
+    });
+    navigator.serviceWorker.startMessages?.();
+    // Erinnerungen für die nächsten Tage neu berechnen (fragt nie selbst nach Erlaubnis)
+    setTimeout(() => ctx.reminders.refresh().catch(() => {}), 1500);
   }
 }
 
