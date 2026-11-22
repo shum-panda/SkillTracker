@@ -1,5 +1,6 @@
 // Aussprechen üben: Satz für Satz anhören, selbst sprechen, sich anhören, bewerten (selbst oder automatisch).
 import { transcribeAudio } from "../../core/providers/audio.js";
+import { recordActivity } from "../../core/activity.js";
 import { alignWords, selfScore, speakingSentences, splitWords, summarizeSpeaking, SPEECH_TYPES } from "../../core/speech.js";
 import { esc, spinner } from "../dom.js";
 import { blobToWav, canRecognize, canRecord, canSpeak, MAX_SECONDS, speak, startRecording, stopSpeaking } from "../audio.js";
@@ -19,6 +20,7 @@ function markedHtml(sentence, tokens) {
 
 export async function render(root, ctx, [idParam]) {
   const store = ctx.store;
+  const openedAt = Date.now();
   const e = await store.getEntry(Number(idParam));
   if (!e) {
     root.innerHTML = '<div class="card"><h2>Text nicht gefunden</h2><a class="btn" href="#/">Zur Übersicht</a></div>';
@@ -228,7 +230,9 @@ export async function render(root, ctx, [idParam]) {
         fresh.speaking = [...(fresh.speaking || []), { createdAt: new Date().toISOString(), method: methodKey, source, score: sum.score,
           sentences: results.map((r) => ({ i: r.i, score: r.score })), missed: sum.missed }].slice(-50);
         await store.putEntry(fresh);
+        await recordActivity(store, { kind: "speak", count: results.length, ms: Math.min(3600000, Date.now() - openedAt) }).catch(() => {});
         ctx.toast("Aussprache gespeichert.");
+        if (ctx.unit?.partDone("speak", `Aussprache: ${sum.score} von 100.`)) return;
         ctx.navigate(`#/e/${e.id}`);
       } catch (er) {
         root.querySelector("#save-status").innerHTML = `<p class="note">${errorText(er)}</p>`;

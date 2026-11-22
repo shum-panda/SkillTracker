@@ -1,5 +1,6 @@
 // Überarbeiten: Fehler als Aufgaben (Schritt für Schritt) oder den ganzen Text auf einmal; danach neu bewerten.
 import { analyze, judgeRevision } from "../../core/ai.js";
+import { recordActivity } from "../../core/activity.js";
 import { computeMetrics } from "../../core/metrics.js";
 import { computeScores, MIN_WORDS } from "../../core/scores.js";
 import { locateErrors } from "../../core/locate.js";
@@ -14,6 +15,7 @@ const errorText = (e) => esc(e?.message || String(e)) + (e?.detail ? `<br><span 
 
 export async function render(root, ctx, [idParam]) {
   const store = ctx.store;
+  const openedAt = Date.now();
   const e = await store.getEntry(Number(idParam));
   if (!e) {
     root.innerHTML = '<div class="card"><h2>Text nicht gefunden</h2><a class="btn" href="#/">Zur Übersicht</a></div>';
@@ -226,12 +228,14 @@ export async function render(root, ctx, [idParam]) {
       const fresh = await store.getEntry(e.id);
       fresh.revisions = [...(fresh.revisions || []), rec];
       await store.putEntry(fresh);
+      await recordActivity(store, { kind: "revise", ms: Math.min(3600000, Date.now() - openedAt) }).catch(() => {});
     };
     $("save").onclick = async () => {
       for (const b of buttons) b.disabled = true;
       try {
         await saveRevision(record());
         ctx.toast("Überarbeitung gespeichert.");
+        if (ctx.unit?.partDone("revise", "Überarbeitung gespeichert.")) return;
         ctx.navigate(`#/e/${e.id}`);
       } catch (er) {
         status.innerHTML = `<p class="note">${errorText(er)}</p>`;
@@ -257,6 +261,8 @@ export async function render(root, ctx, [idParam]) {
           revisions: [], schemaVersion: 1,
         });
         await saveRevision({ ...rec, resultEntryId: newId });
+        await recordActivity(store, { kind: "write" }).catch(() => {});
+        if (ctx.unit?.partDone("revise", "Überarbeitung neu bewertet – das Ergebnis findest du in der Übersicht.")) return;
         if (location.hash === `#/e/${e.id}/revise` && ctx.store === store) ctx.navigate(`#/e/${newId}`);
         else ctx.toast("Neubewertung fertig – zu finden in der Übersicht.");
       } catch (er) {

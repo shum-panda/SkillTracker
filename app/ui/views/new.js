@@ -1,5 +1,6 @@
 // Neuer Text: Foto oder Tippen → Einlesen → Prüfen → Bewerten → speichern.
 import { analyze, transcribe } from "../../core/ai.js";
+import { recordActivity } from "../../core/activity.js";
 import { computeMetrics } from "../../core/metrics.js";
 import { computeScores, reliability, MIN_WORDS, RELIABLE_WORDS } from "../../core/scores.js";
 import { tokenize } from "../../core/text.js";
@@ -249,6 +250,7 @@ async function runAnalysis(ctx, store, provider, ocr, snap, job) {
   try {
     id = await store.addEntry(entry);
     await store.setSetting("draft", null);
+    await recordActivity(store, { kind: "write" }).catch(() => {});
     await syncCards(store, [{ ...entry, id }]).catch(() => {}); // Karteikarten aus Lücken und Wortschatz-Fehlern
   } catch (e) {
     // Nicht gespeichert: Ergebnis trotzdem zeigen, Entwurf bleibt.

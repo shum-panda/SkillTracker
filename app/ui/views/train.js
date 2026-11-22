@@ -1,5 +1,6 @@
 // Grammatik-Training: Schwächenprofil („Deine Baustellen“) und Übungsrunden je Fehlerart.
 import { generateDrill, judgeRevision } from "../../core/ai.js";
+import { recordActivity } from "../../core/activity.js";
 import { checkExercise, ownExercises } from "../../core/drill.js";
 import { categoryById } from "../../core/taxonomy.js";
 import { weaknessProfile } from "../../core/weakness.js";
@@ -94,6 +95,7 @@ export async function renderSession(root, ctx, [category]) {
   }
 
   let finished = false;
+  const startedAt = Date.now();
   const finish = async () => {
     if (finished) return;
     finished = true;
@@ -103,6 +105,8 @@ export async function renderSession(root, ctx, [category]) {
       const drills = (await store.getSetting("drills")) || [];
       drills.push({ createdAt: new Date().toISOString(), category, total, correct });
       await store.setSetting("drills", drills.slice(-500)).catch(() => {});
+      await recordActivity(store, { kind: "drill", count: total, ms: Math.min(3600000, Date.now() - startedAt) }).catch(() => {});
+      if (ctx.unit?.partDone("drill", `${cat.label}: ${correct} von ${total} richtig.`)) return;
     }
     root.innerHTML = `
       <div class="head"><p class="kicker">${esc(cat.label)}</p><h1>${total ? `${correct} von ${total} richtig` : "Keine Übungen"}</h1>

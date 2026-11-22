@@ -2,7 +2,12 @@
 import { AXES, averageScores } from "../../core/scores.js";
 import { esc, fmtDate } from "../dom.js";
 import { radarSvg } from "../charts.js";
-import { learnSummary } from "./learn.js";
+import { planToday } from "../../core/plan.js";
+import { dayStats } from "../../core/activity.js";
+import { learningDayKey } from "../../core/srs.js";
+import { heatmapHtml, bindHeatmap } from "../heatmap.js";
+import { partLabel } from "../unit.js";
+import { planData } from "./go.js";
 
 export function entryListHtml(entries) {
   return `<ul class="entries">${entries.map((e) => `<li><a href="#/e/${e.id}">
@@ -34,25 +39,56 @@ function welcome(hasProvider) {
   </section>`;
 }
 
+function todayHtml(plan, data) {
+  const can = plan.parts.length > 0;
+  const learn = can
+    ? `<a class="btn big violet" href="#/go/heute"><b>Lernen</b><span>ca. ${esc(plan.minutes)} Min</span></a>`
+    : `<a class="btn big disabled-link" href="#/new" aria-disabled="true"><b>Nichts fällig</b><span>Text schreiben?</span></a>`;
+  const hasProfile = Boolean(data.hasProfile);
+  let planBody;
+  if (!hasProfile) {
+    planBody = '<p class="muted">Lass dir einen Lernplan einrichten: Er sagt dir jeden Tag, was dran ist – am Anfang kurz, dann länger.</p><a class="btn small" href="#/willkommen">Lernplan einrichten (1 Minute)</a>';
+  } else if (plan.done) {
+    planBody = '<p><b>Heute geschafft ✓</b></p><p class="small muted">Du kannst trotzdem weiterlernen.</p>'
+      + (can ? '<a class="btn small" href="#/go/heute">Weiterlernen</a>' : "");
+  } else if (can) {
+    planBody = `<ul class="plan-parts">${plan.parts.map((p) => `<li><span>${esc(partLabel(p))}</span><span class="small muted">ca. ${esc(Math.max(1, Math.round(p.seconds / 60)))} Min</span></li>`).join("")}</ul>`;
+  } else {
+    planBody = '<p class="muted">Gerade ist nichts fällig. Schreib einen Text – daraus entstehen neue Karten und Übungen.</p><a class="small" href="#/train">Frei üben</a>';
+  }
+  return `<div class="quick">
+      <a class="btn big primary" href="#/new"><b>Text schreiben</b><span>Foto oder tippen</span></a>
+      ${learn}
+    </div>
+    <section class="card plan-card">
+      <div class="row between"><h2>Heute</h2>${plan.writeDay && hasProfile ? '<span class="chip violet">Heute ist Schreibtag</span>' : ""}</div>
+      ${planBody}
+    </section>`;
+}
+
 export async function render(root, ctx) {
-  const entries = await ctx.store.listEntries();
+  const data = await planData(ctx);
+  const entries = data.entries;
   const providers = await ctx.providers();
+  data.hasProfile = Boolean(await ctx.store.getSetting("profile"));
+  if (!entries.length && !data.hasProfile && !ctx.demo) {
+    ctx.replace("#/willkommen");
+    return;
+  }
+  const plan = planToday(data);
+  const today = learningDayKey(data.now);
+  const weeks = (globalThis.innerWidth || 0) >= 900 ? 26 : 20;
+  const heat = `<section class="card"><div class="row between"><h2>Aktivität</h2></div>${heatmapHtml(dayStats(data.activity), today, { weeks })}</section>`;
   if (!entries.length) {
-    root.innerHTML = welcome(providers.length > 0 || ctx.demo);
+    root.innerHTML = todayHtml(plan, data) + heat + welcome(providers.length > 0 || ctx.demo);
+    bindHeatmap(root);
     return;
   }
   const recent = entries.slice(0, 5);
   const avg = averageScores(recent);
-  const learnState = await learnSummary(ctx).catch(() => null);
-  const toLearn = learnState ? learnState.due + learnState.fresh : 0;
   root.innerHTML = `
-    <div class="head row between">
-      <div><p class="kicker">Übersicht</p><h1>Deine Form</h1></div>
-      <a class="btn primary" href="#/new">Neuer Text</a>
-    </div>
-    ${toLearn ? `<section class="card due-banner"><div><b>${toLearn} ${toLearn === 1 ? "Karte" : "Karten"} heute</b>
-      <span class="small muted"> · ${learnState.due} fällig, ${learnState.fresh} neu</span></div>
-      <a class="btn" href="#/learn/session">Jetzt lernen</a></section>` : ""}
+    ${todayHtml(plan, data)}
+    ${heat}
     <div class="grid side">
       <section class="card">
         <div class="radar-wrap">${radarSvg(AXES, avg, null, { title: "Schnitt der letzten Texte" })}</div>
@@ -73,4 +109,5 @@ export async function render(root, ctx) {
       <div class="row between"><h2>Letzte Texte</h2>${entries.length > 1 ? '<a href="#/history">Verlauf ansehen</a>' : ""}</div>
       ${entryListHtml(entries.slice(0, 8))}
     </section>`;
+  bindHeatmap(root);
 }

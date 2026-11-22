@@ -17,6 +17,9 @@ import * as train from "./views/train.js";
 import * as syncView from "./views/sync.js";
 import * as speakView from "./views/speak.js";
 import * as welcome from "./views/welcome.js";
+import * as go from "./views/go.js";
+import { unitBarHtml } from "./unit.js";
+import { backfillActivity, pruneActivity } from "../core/activity.js";
 
 const learnSession = { render: learn.renderSession };
 const trainSession = { render: train.renderSession };
@@ -33,6 +36,13 @@ const ctx = {
     if (location.hash === hash) render();
     else location.hash = hash;
   },
+  // wie navigate, aber ohne neuen Eintrag im Verlauf (Sprünge und Zwischenseiten)
+  replace(hash) {
+    if (location.hash === hash) render();
+    else location.replace(location.pathname + location.search + hash);
+  },
+  unit: null,       // laufende geplante Einheit (unit.js)
+  leaveHook: null,  // wird vor dem Wechsel der Ansicht aufgerufen (z. B. Kartensitzung sichert ihren Stand)
   async providers() {
     return (await ctx.store.getSetting("providers")) || [];
   },
@@ -104,6 +114,7 @@ const ROUTES = [
   [/^#?\/?$/, home, "home"],
   [/^#\/new$/, newText, "new"],
   [/^#\/willkommen$/, welcome, ""],
+  [/^#\/go\/(.*)$/, go, "home"],
   [/^#\/e\/(\d+)\/revise$/, revise, ""],
   [/^#\/e\/(\d+)\/speak$/, speakView, ""],
   [/^#\/e\/(\d+)$/, entry, ""],
@@ -125,6 +136,10 @@ async function render() {
     window.history.replaceState(null, "", "#/");
   }
   const h = location.hash || "#/";
+  const leave = ctx.leaveHook;
+  ctx.leaveHook = null;
+  try { leave?.(); } catch { /* egal */ }
+  if (ctx.unit && !ctx.unit.allows(h)) ctx.unit.abandon();
   const route = ROUTES.find(([re]) => re.test(h)) || ROUTES[0];
   const params = h.match(route[0])?.slice(1) || [];
   for (const a of document.querySelectorAll("[data-nav]")) {
@@ -141,6 +156,7 @@ async function render() {
       <a class="btn" href="#/">Zur Übersicht</a></div>`;
   }
   if (seq !== renderSeq) return; // inzwischen weiter navigiert
+  if (ctx.unit && ctx.unit.current() && h === ctx.unit.current().target) view.insertAdjacentHTML("afterbegin", unitBarHtml(ctx.unit, esc));
   root.replaceChildren(view);
   window.scrollTo(0, 0);
 }
@@ -148,6 +164,8 @@ async function render() {
 async function start() {
   await openStore();
   await ctx.applyTheme();
+  // Aktivität: einmalig Vorhandenes nachtragen, Altes aufräumen (stört den Start nicht, wenn es scheitert)
+  await backfillActivity(ctx.store).then(() => pruneActivity(ctx.store)).catch(() => {});
   window.addEventListener("hashchange", render);
   await render();
   if ("serviceWorker" in navigator && location.protocol !== "file:") {

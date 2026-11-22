@@ -5,19 +5,21 @@ import { buildQueue, DEFAULT_NEW_PER_DAY, dueDayIndex, forecast, intervalLabel, 
 import { closeModal, confirmDialog, esc, openModal } from "../dom.js";
 import { highlightHtml } from "../highlight.js";
 import { profileFor, weaknessListHtml } from "./train.js";
+import { recordActivity, recordCardTimes } from "../../core/activity.js";
+import { sessionShouldEnd } from "../unit.js";
 
 const TYPE_LABEL = { gap: "fehlendes Wort", vocab: "Wortschatz", manual: "eigene Karte" };
 const GRADES = [["again", "Nochmal"], ["hard", "Schwer"], ["good", "Gut"], ["easy", "Leicht"]];
 const DAYS = new Intl.DateTimeFormat("de-DE", { weekday: "short" });
 
-async function newPerDay(store) {
+export async function newPerDay(store) {
   const v = await store.getSetting("newPerDay");
   return Number.isInteger(v) ? v : DEFAULT_NEW_PER_DAY;
 }
 
 // Karten aus allen Texten nachtragen – einmal je Speicher und Sitzung.
 // Das Versprechen wird sofort gemerkt: Zwei Aufrufe gleichzeitig teilen sich einen Lauf.
-function ensureCards(ctx) {
+export function ensureCards(ctx) {
   if (ctx.cardsSyncedFor !== ctx.store || !ctx.cardsSync) {
     const store = ctx.store;
     ctx.cardsSyncedFor = store;
@@ -220,6 +222,21 @@ export async function renderSession(root, ctx) {
   const queue = [...q.due, ...q.fresh];
   const later = [...q.ahead];   // lernende Karten, die gleich wieder dran sind
   let done = 0;
+  // Teil einer geplanten Einheit: höchstens so viele Bewertungen
+  const unitPart = ctx.unit?.current()?.kind === "cards" ? ctx.unit.current() : null;
+  const limit = unitPart?.count ?? null;
+  // Zeit pro Karte (für die Planung) und Eintrag im Aktivitäts-Tagebuch – am Ende oder beim Verlassen
+  const times = [];
+  let shownAt = 0;
+  let flushed = false;
+  const flush = () => {
+    if (flushed || !done) return;
+    flushed = true;
+    const ms = times.reduce((a, b) => a + b, 0);
+    recordActivity(store, { kind: "cards", count: done, ms }).catch(() => {});
+    recordCardTimes(store, times).catch(() => {});
+  };
+  ctx.leaveHook = flush;
   const total = () => done + 1 + queue.length + later.length; // inkl. der gerade gezeigten Karte
 
   const nextCard = () => {
@@ -229,8 +246,11 @@ export async function renderSession(root, ctx) {
   };
 
   const show = (card) => {
-    if (!card) {
+    if (sessionShouldEnd({ graded: done, limit, queueLeft: card ? 1 : 0 })) {
       keyHandler = null;
+      flush();
+      if (ctx.leaveHook === flush) ctx.leaveHook = null;
+      if (ctx.unit?.partDone("cards", `${done} ${done === 1 ? "Karte" : "Karten"} wiederholt.`)) return;
       root.innerHTML = `<div class="head"><p class="kicker">Lernen</p><h1>Fertig für jetzt</h1>
         <p>${done ? `${done} ${done === 1 ? "Karte" : "Karten"} wiederholt.` : "Gerade ist nichts fällig."} Morgen geht's weiter.</p></div>
         <div class="row"><a class="btn primary" href="#/learn">Zum Lernplan</a><a class="btn" href="#/new">Neuen Text schreiben</a></div>`;
@@ -238,6 +258,7 @@ export async function renderSession(root, ctx) {
     }
     let flipped = false;
     let busy = false;
+    shownAt = Date.now();
     root.innerHTML = `
       <div class="head"><a href="#/learn" class="small">← Lernplan</a>
         <p class="kicker">${done + 1} von ${total()} · ${esc(TYPE_LABEL[card.type])}</p>
@@ -269,6 +290,7 @@ export async function renderSession(root, ctx) {
         return;
       }
       done++;
+      times.push(Math.min(120000, Date.now() - shownAt));
       if (updated.sched.state === "learning") later.push(updated);
       show(nextCard());
     };
