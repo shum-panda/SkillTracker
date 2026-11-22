@@ -9,7 +9,7 @@ plant sie jeden Tag eine passende Lerneinheit, erinnert daran und bringt einen m
 App öffnet, ist **mit einem Tipp beim Schreiben oder beim Lernen**. Eine Heatmap wie bei GitHub zeigt die eigene
 Aktivität.
 
-Entscheidungen des Nutzers: Erinnerungen über **Cloudflare und zusätzlich im Gerät** („Beides“). Akzentfarbe für
+Entscheidungen des Nutzers: Erinnerungen über einen **Absender und zusätzlich im Gerät** („Beides“); der Absender läuft auf dem **eigenen Server** 91.98.206.40 statt bei Cloudflare („Alles auf meinen Server“). Akzentfarbe für
 diesen Teil **Lila** (Heatmap, Plan-Karte, Onboarding-Hervorhebungen). Die übrige App behält ihr Petrol.
 
 ## 1. Startbildschirm „Heute“ (`#/`)
@@ -149,10 +149,9 @@ Titel „Zeit zum Lernen“, Text z. B. „ca. 6 Min · 14 Karten · Artikel“ 
 Ziel `#/go/heute`. Ist die heutige Einheit schon erledigt, entfällt die heutige Erinnerung. Die App berechnet die Liste
 bei jedem Öffnen, nach jeder Einheit und nach Profiländerungen neu und schickt sie dem Absender.
 
-### Weg A: Absender auf Cloudflare (`push/` im Repo)
+### Weg A: Absender auf dem eigenen Server (`server/push.mjs`)
 
-- Worker `skilltracker-push` mit **einem** Durable Object (SQLite) für alle Anmeldungen und einem **Alarm** auf die
-  nächste fällige Erinnerung (pünktlich, kein Cron nötig).
+- Node-Dienst `skilltracker-push` (Node 24, ohne Abhängigkeiten, Speicher `node:sqlite` in `/var/lib/skilltracker-push`), hinter Caddy unter `https://push.91-98-206-40.sslip.io`, als gehärteter systemd-Dienst wie der Vermittler. Ein Zeitgeber auf die nächste fällige Erinnerung (pünktlich), zusätzlich Prüfung jede Minute; nach einem Neustart werden verpasste Erinnerungen bis 2 Stunden alt noch gesendet, ältere verworfen.
 - Schnittstelle (JSON, CORS nur für erlaubte Herkünfte `ALLOWED_ORIGINS`):
   - `GET /v1/key` → öffentlicher VAPID-Schlüssel.
   - `PUT /v1/reminders` `{ subscription: { endpoint, keys: { p256dh, auth } }, secret, reminders: [{ at, title,
@@ -168,10 +167,9 @@ bei jedem Öffnen, nach jeder Einheit und nach Profiländerungen neu und schickt
   Push-Dienst 404 oder 410, wird die Anmeldung gelöscht. Anmeldungen ohne Änderung seit 60 Tagen werden gelöscht.
 - Der Absender speichert nur Push-Adresse, Schlüssel des Geräts, Hash des Geheimnisses und die kurzen
   Erinnerungszeilen – keine Texte und keine Karten. Das steht so in den Einstellungen.
-- VAPID-Schlüssel erzeugt `tools/make_vapid.mjs`; der private Schlüssel kommt als Worker-Geheimnis
-  (`wrangler secret put VAPID_PRIVATE_JWK`), der öffentliche in `wrangler.toml`.
+- VAPID-Schlüssel erzeugt `tools/make_vapid.mjs`; der private Schlüssel liegt nur auf dem Server (`/etc/skilltracker-push/vapid.json`, nur für den Dienst lesbar), der öffentliche kommt über `GET /v1/key`.
 - Die Adresse des Absenders ist in den Einstellungen änderbar; Standard ist die eingebaute Adresse, sobald der
-  Worker veröffentlicht ist (bis dahin leer → Weg B).
+  Dienst läuft (bis dahin leer → Weg B).
 
 ### Weg B: im Gerät (Rückfall)
 
@@ -205,6 +203,6 @@ ausschalten“ (meldet beim Absender ab).
 - Heatmap: Raster der Wochen (Montag-Beginn, Monatsgrenzen, Zeitumstellung), Ausgabe enthält keine ungeschützten
   Texte.
 - Push: `aes128gcm` mit dem Testbeispiel aus RFC 8291 Anhang A, VAPID-Signatur prüfbar mit dem öffentlichen
-  Schlüssel, Prüfung der Eingaben (Grenzen, Hosts, Geheimnis), Alarm sendet fällige und setzt den nächsten, 410 löscht.
+  Schlüssel, Prüfung der Eingaben (Grenzen, Hosts, Geheimnis), Zeitgeber sendet fällige und plant den nächsten, verpasste nach Neustart (≤ 2 h senden, älter verwerfen), 410 löscht.
 - Browser (CDP, wie bisher): Onboarding bis zur Empfehlung, Startbildschirm mit beiden Knöpfen, `#/go/heute` läuft
   durch alle Teile, Sprung aus `notificationclick`, Heatmap bei 360 px ohne Querscrollen, helles und dunkles Design.
