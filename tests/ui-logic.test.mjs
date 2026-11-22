@@ -71,3 +71,21 @@ test("Onboarding: fertig erst mit Profil; Ergebnis je nach KI", async () => {
   assert.match(without, /Demo ansehen/);
   assert.ok(without.includes(recommendation(p).text));
 });
+
+// --- Teil 7: Demo-Aktivität ---
+import { demoActivity, demoProfile } from "../app/core/demo.js";
+import { dayStats, levelOf } from "../app/core/activity.js";
+import { cleanProfile } from "../app/core/profile.js";
+import { cleanActivity } from "../app/core/backup.js";
+
+test("Demo-Aktivität: 20 Wochen, deterministisch, alle Stufen", () => {
+  const now = new Date(2026, 10, 20, 12);
+  const a = demoActivity(now);
+  assert.deepEqual(demoActivity(now), a);
+  const days = [...new Set(a.map((e) => e.day))].sort();
+  assert.ok(days[0] >= "2026-07-03" && days.at(-1) <= "2026-11-20", `${days[0]} … ${days.at(-1)}`);
+  const levels = new Set([...dayStats(a).values()].map((d) => levelOf(d.score)));
+  for (const l of [1, 2, 3, 4]) assert.ok(levels.has(l), `Stufe ${l}`);
+  assert.ok(a.every((e) => cleanActivity(e)), "gültige Ereignisse");
+  assert.ok(cleanProfile(demoProfile()));
+});

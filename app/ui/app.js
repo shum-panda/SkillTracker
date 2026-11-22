@@ -2,7 +2,7 @@
 import { MemoryStore } from "../core/store.js";
 import { IdbStore } from "../core/store-idb.js";
 import { parseFreq } from "../core/freq.js";
-import { demoEntries } from "../core/demo.js";
+import { demoActivity, demoEntries, demoProfile } from "../core/demo.js";
 import { esc, toast } from "./dom.js";
 import * as home from "./views/home.js";
 import * as newText from "./views/new.js";
@@ -99,6 +99,9 @@ async function enterDemo() {
   const entries = demoEntries(freq);
   for (const e of entries) await store.putEntry(e);
   await syncCards(store, entries);
+  await store.setSetting("profile", demoProfile());
+  for (const ev of demoActivity()) await store.addActivity(ev);
+  ctx.unit?.abandon();
   ctx.realStore ??= ctx.store;
   ctx.store = store;
   ctx.demo = true;

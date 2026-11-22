@@ -137,3 +137,31 @@ const DEMO_SPEAKING = [
   [[13, 74, ["daunting"]], [10, 81, []]],
   [[2, 86, ["character"]]],
 ];
+
+// Demo-Lernprofil und 20 Wochen Aktivität (deterministisch), damit Plan und Heatmap in der Demo gefüllt sind.
+export function demoProfile() {
+  return { goal: "daily", examDate: null, level: "B1", motivation: "steady", minutes: 10, writesPerWeek: 2,
+    reminder: { enabled: false, time: "19:00", days: [0, 1, 2, 3, 4, 5, 6] }, updatedAt: "2026-01-01T00:00:00.000Z" };
+}
+
+export function demoActivity(now = new Date()) {
+  const out = [];
+  let seed = 7;
+  const rand = () => (seed = (seed * 48271) % 2147483647) / 2147483647;
+  const base = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
+  for (let back = 139; back >= 0; back--) {
+    const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() - back, 12);
+    const r = rand();
+    if (r < 0.4 && back > 0) continue; // etwa 60 % aktive Tage
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const at = d.toISOString();
+    const n = out.length;
+    const uid = (k) => `demo-${String(n).padStart(6, "0")}-${k}`;
+    const intensity = (r - 0.4) / 0.6; // 0 … 1
+    const cards = Math.round(5 + intensity * 55);
+    out.push({ uid: uid("c"), at, day, kind: "cards", count: cards, ms: cards * 15000 });
+    if (intensity > 0.55) out.push({ uid: uid("d"), at, day, kind: "drill", count: 5, ms: 120000 });
+    if (intensity > 0.8) out.push({ uid: uid("w"), at, day, kind: "write" });
+  }
+  return out;
+}

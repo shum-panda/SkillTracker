@@ -7,6 +7,10 @@ zeigt, wo man besser wird.
 
 - Läuft komplett im Browser (Handy und PC, als App installierbar). Kein Konto, kein Server mit deinen Daten.
 - Eigene KI anbinden: Claude, OpenAI, Gemini oder ein OpenAI-kompatibler Server (Ollama, LM Studio, OpenRouter).
+- Lernbegleiter: Beim ersten Start erklärt ein Onboarding den Ablauf und fragt Ziel, Motivation und Zeit ab. Daraus plant
+  die App jeden Tag eine Lerneinheit (Karten, Grammatik, Überarbeiten, Aussprache) – am Anfang kurz, mit regelmäßiger
+  Nutzung länger. Eine Heatmap zeigt die eigene Aktivität, Erinnerungen bringen einen mit einem Tipp direkt in die Einheit
+  (Absender auf dem eigenen Server, siehe `docs/betrieb.md`; ohne Absender im Gerät).
 
 ## Starten
 
