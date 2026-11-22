@@ -7,6 +7,7 @@
   "scripts": {
     "test": "node --test tests/",
     "relay": "node server/relay.mjs",
+    "push": "node server/push.mjs",
     "serve": "node tools/serve.mjs"
   },
   "engines": { "node": ">=20" }

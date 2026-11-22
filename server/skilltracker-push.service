@@ -1,0 +1,39 @@
+# systemd-Dienst für die SkillTracker-Erinnerungen (Web Push).
+# Kopieren nach /etc/systemd/system/, dann: systemctl enable --now skilltracker-push
+# Schlüssel einmalig: install -d -m 750 -g skilltracker /etc/skilltracker-push
+#   node tools/make_vapid.mjs > /etc/skilltracker-push/vapid.json && chgrp skilltracker /etc/skilltracker-push/vapid.json && chmod 640 /etc/skilltracker-push/vapid.json
+[Unit]
+StartLimitIntervalSec=0
+Description=SkillTracker-Erinnerungen (Web Push)
+After=network-online.target
+
+[Service]
+Type=simple
+User=skilltracker
+WorkingDirectory=/srv/skilltracker
+Environment=PORT=8840
+Environment=HOST=127.0.0.1
+Environment=PUSH_ORIGINS=https://shum-panda.github.io
+Environment=PUSH_VAPID=/etc/skilltracker-push/vapid.json
+Environment=PUSH_DATA=/var/lib/skilltracker-push/state.json
+StateDirectory=skilltracker-push
+StateDirectoryMode=0750
+ExecStart=/usr/bin/node server/push.mjs
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+MemoryMax=96M
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+SystemCallFilter=@system-service
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

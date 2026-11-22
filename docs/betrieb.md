@@ -86,3 +86,33 @@ sync.dein-server.de {
 
 Dann in der App unter Einstellungen → Geräte verbinden `https://sync.dein-server.de` eintragen (auf beiden Geräten
 reicht es auf dem, das den QR-Code zeigt – die Adresse steckt im Code). Lokal testen: `RELAY_ORIGINS=http://127.0.0.1:8820 npm run relay`.
+
+## Erinnerungen (Absender für Web Push)
+
+Damit Erinnerungen pünktlich kommen, auch wenn die App zu ist, schickt ein kleiner Dienst sie über die Push-Dienste der
+Browser (Google, Mozilla, Apple, Microsoft). Er speichert je Gerät nur die Push-Adresse, die Geräteschlüssel, einen Hash
+des Geräte-Geheimnisses und die kurzen Erinnerungszeilen – keine Texte, keine Karten. Ohne Absender erinnert die App nur
+im Gerät (Chrome/Android als installierte App, ungefähr).
+
+```
+# auf dem Server (Node ≥ 20, keine Pakete) – Code wie beim Vermittler unter /srv/skilltracker
+sudo install -d -m 750 -g skilltracker /etc/skilltracker-push
+sudo sh -c 'node /srv/skilltracker/tools/make_vapid.mjs > /etc/skilltracker-push/vapid.json'
+sudo chgrp skilltracker /etc/skilltracker-push/vapid.json && sudo chmod 640 /etc/skilltracker-push/vapid.json
+sudo cp /srv/skilltracker/server/skilltracker-push.service /etc/systemd/system/
+sudo systemctl enable --now skilltracker-push
+curl http://127.0.0.1:8840/healthz   # → ok
+```
+
+Caddy:
+
+```
+push.dein-server.de {
+    reverse_proxy 127.0.0.1:8840
+}
+```
+
+Die App nutzt standardmäßig `https://push.91-98-206-40.sslip.io`; unter Einstellungen → Lernplan & Erinnerungen → Absender
+lässt sich die Adresse ändern (leer = nur im Gerät). Den Schlüssel nie neu erzeugen, solange Geräte angemeldet sind – sonst
+müssen sich alle neu anmelden (passiert beim nächsten Öffnen der App automatisch, wenn der Absender sie ablehnt).
+Lokal testen: `PUSH_VAPID=vapid.json PUSH_DATA=state.json PUSH_ORIGINS=http://127.0.0.1:8820 npm run push`.
