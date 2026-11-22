@@ -18,7 +18,7 @@ import * as syncView from "./views/sync.js";
 import * as speakView from "./views/speak.js";
 import * as welcome from "./views/welcome.js";
 import * as go from "./views/go.js";
-import { unitBarHtml } from "./unit.js";
+import { recoverUnit, unitBarHtml } from "./unit.js";
 import { createReminders } from "./push.js";
 import { backfillActivity, pruneActivity } from "../core/activity.js";
 
@@ -172,6 +172,7 @@ async function start() {
   await ctx.applyTheme();
   // Aktivität: einmalig Vorhandenes nachtragen, Altes aufräumen (stört den Start nicht, wenn es scheitert)
   await backfillActivity(ctx.store).then(() => pruneActivity(ctx.store)).catch(() => {});
+  await recoverUnit(ctx.store).catch(() => {});
   window.addEventListener("hashchange", render);
   await render();
   if ("serviceWorker" in navigator && location.protocol !== "file:") {

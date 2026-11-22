@@ -10,8 +10,12 @@ export const DEFAULT_PUSH_URL = "https://push.91-98-206-40.sslip.io";
 const b64u = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const unb64u = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
 
-export function createReminders(ctx) {
-  const supported = () => "serviceWorker" in navigator && "Notification" in globalThis;
+// env: zum Testen austauschbar (navigator, fetch, Notification)
+export function createReminders(ctx, env = {}) {
+  const nav = env.navigator ?? globalThis.navigator;
+  const fetch = env.fetch ?? globalThis.fetch.bind(globalThis);
+  const Notif = env.Notification ?? globalThis.Notification;
+  const supported = () => Boolean(nav && "serviceWorker" in nav && Notif);
   const pushUrl = async () => {
     const v = await ctx.store.getSetting("pushUrl");
     return (typeof v === "string" ? v : DEFAULT_PUSH_URL).replace(/\/+$/, "");
@@ -26,35 +30,47 @@ export function createReminders(ctx) {
     return s;
   };
 
-  async function subscription(base) {
-    const reg = await navigator.serviceWorker.ready;
+  const sameBytes = (buf, bytes) => {
+    if (!buf) return false;
+    const a = new Uint8Array(buf);
+    return a.length === bytes.length && a.every((x, i) => x === bytes[i]);
+  };
+
+  // Anmeldung beim Push-Dienst des Browsers – passend zum Schlüssel des Absenders. Eine Anmeldung mit anderem Schlüssel
+  // (Absender gewechselt oder neu eingerichtet) würde stumm scheitern, darum wird sie dann erneuert.
+  async function subscription(base, { fresh = false } = {}) {
+    const reg = await nav.serviceWorker.ready;
     if (!reg.pushManager) throw new Error("Dieser Browser kann keine Push-Nachrichten empfangen.");
+    const res = await fetch(`${base}/v1/key`);
+    if (!res.ok) throw new Error(`Absender antwortet nicht (${res.status}).`);
+    const key = unb64u((await res.json()).publicKey);
     let sub = await reg.pushManager.getSubscription();
-    if (!sub) {
-      const res = await fetch(`${base}/v1/key`);
-      if (!res.ok) throw new Error(`Absender antwortet nicht (${res.status}).`);
-      const { publicKey } = await res.json();
-      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: unb64u(publicKey) });
+    if (sub && (fresh || !sameBytes(sub.options?.applicationServerKey, key))) {
+      await sub.unsubscribe().catch(() => {});
+      sub = null;
     }
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
     return sub.toJSON();
   }
 
   async function sendA(list) {
     const base = await pushUrl();
     if (!base) throw new Error("Kein Absender eingetragen.");
-    const sub = await subscription(base);
-    const res = await fetch(`${base}/v1/reminders`, {
+    const put = async (sub) => fetch(`${base}/v1/reminders`, {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ subscription: { endpoint: sub.endpoint, keys: sub.keys }, secret: await secret(), reminders: list }),
     });
+    let res = await put(await subscription(base));
+    // 403: Der Absender kennt diese Anmeldung mit einem anderen Geheimnis (z. B. nach "Alles löschen") – neu anmelden.
+    if (res.status === 403) res = await put(await subscription(base, { fresh: true }));
     if (!res.ok) throw new Error(`Absender lehnt ab (${res.status}).`);
   }
 
   async function wayB() {
-    const reg = await navigator.serviceWorker.ready;
+    const reg = await nav.serviceWorker.ready;
     if (!("periodicSync" in reg)) return false;
     try {
-      const perm = await navigator.permissions?.query({ name: "periodic-background-sync" });
+      const perm = await nav.permissions?.query({ name: "periodic-background-sync" });
       if (perm && perm.state !== "granted") return false;
       await reg.periodicSync.register("lernplan", { minInterval: 12 * 3600 * 1000 });
       return true;
@@ -72,14 +88,26 @@ export function createReminders(ctx) {
 
   async function refresh(extra = []) {
     if (ctx.demo || !supported()) return;
-    if (Notification.permission !== "granted") {
-      await setState({ way: "none", error: Notification.permission === "denied" ? "Benachrichtigungen sind im Browser blockiert." : "" });
+    if (Notif.permission !== "granted") {
+      await setState({ way: "none", error: Notif.permission === "denied" ? "Benachrichtigungen sind im Browser blockiert." : "" });
+      return;
+    }
+    const profile = await ctx.store.getSetting("profile");
+    if (profile && !profile.reminder?.enabled && !extra.length) {
+      // ausgeschaltet: nichts anmelden, eine bestehende Anmeldung beim Absender leeren
+      await ctx.store.setSetting("reminders", []);
+      const reg = await nav.serviceWorker.ready;
+      if (await reg.pushManager?.getSubscription()) await sendA([]).catch(() => {});
+      await reg.periodicSync?.unregister("lernplan").catch(() => {});
+      await setState({ way: "none", error: "" });
       return;
     }
     const list = await currentList(extra);
     await ctx.store.setSetting("reminders", list);
     try {
       await sendA(list);
+      const reg = await nav.serviceWorker.ready;
+      await reg.periodicSync?.unregister("lernplan").catch(() => {}); // pünktlicher Weg läuft: kein doppelter
       await setState({ way: "A", lastSent: new Date().toISOString(), count: list.length });
     } catch (e) {
       const b = await wayB();
@@ -89,15 +117,20 @@ export function createReminders(ctx) {
 
   async function enable() {
     if (ctx.demo || !supported()) return false;
-    const perm = Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
+    const perm = Notif.permission === "default" ? await Notif.requestPermission() : Notif.permission;
     await refresh();
     return perm === "granted";
   }
 
+  // Ausschalten gilt dauerhaft: auch im Lernprofil, sonst meldet der nächste Start wieder an.
   async function disable() {
+    const profile = await ctx.store.getSetting("profile");
+    if (profile?.reminder?.enabled) {
+      await ctx.store.setSetting("profile", { ...profile, reminder: { ...profile.reminder, enabled: false }, updatedAt: new Date().toISOString() });
+    }
     try {
       const base = await pushUrl();
-      const reg = await navigator.serviceWorker.ready;
+      const reg = await nav.serviceWorker.ready;
       const sub = await reg.pushManager?.getSubscription();
       if (sub && base) {
         await fetch(`${base}/v1/reminders`, { method: "DELETE", headers: { "Content-Type": "application/json" },
@@ -118,7 +151,7 @@ export function createReminders(ctx) {
     if (st?.way !== "A") {
       // ohne Absender: solange die App offen ist, zeigt der Service Worker die Test-Erinnerung selbst
       setTimeout(async () => {
-        const reg = await navigator.serviceWorker.ready;
+        const reg = await nav.serviceWorker.ready;
         reg.showNotification(t.title, { body: t.body, tag: "lernplan-test", data: { url: t.url }, icon: "icons/icon-192.png" });
       }, 60_000);
     }
@@ -131,7 +164,7 @@ export function createReminders(ctx) {
     if (!supported()) { el.innerHTML = '<p class="note small">Dieser Browser kann keine Benachrichtigungen zeigen.</p>'; return; }
     const st = (await ctx.store.getSetting("pushState")) || { way: "none" };
     const url = await pushUrl();
-    const perm = Notification.permission;
+    const perm = Notif.permission;
     const line = perm === "denied" ? "Benachrichtigungen sind im Browser blockiert – in den Website-Einstellungen erlauben."
       : perm !== "granted" ? "Benachrichtigungen sind noch nicht erlaubt."
       : st.way === "A" ? `Aktiv über deinen Absender (pünktlich). Zuletzt übermittelt: ${new Date(st.lastSent).toLocaleString("de-DE")}.`
@@ -149,7 +182,13 @@ export function createReminders(ctx) {
     const again = () => renderStatus(el);
     el.querySelector("#rem-enable")?.addEventListener("click", async () => { await enable(); again(); });
     el.querySelector("#rem-test").onclick = async () => { const way = await test(); ctx.toast(way === "none" ? "Test läuft – bitte die App offen lassen." : "Test-Erinnerung kommt in etwa einer Minute."); again(); };
-    el.querySelector("#rem-off").onclick = async () => { await disable(); ctx.toast("Erinnerungen sind aus."); again(); };
+    el.querySelector("#rem-off").onclick = async () => {
+      await disable();
+      const box = el.ownerDocument?.getElementById("pf-rem");
+      if (box) box.checked = false;
+      ctx.toast("Erinnerungen sind aus.");
+      again();
+    };
     el.querySelector("#push-url").onchange = async (ev) => {
       const v = ev.target.value.trim().replace(/\/+$/, "");
       if (v && !/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(v) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(v)) { ctx.toast("Bitte eine https-Adresse eintragen."); return; }

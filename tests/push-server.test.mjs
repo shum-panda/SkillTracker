@@ -57,7 +57,7 @@ test("410 löscht das Gerät; 500 drei Versuche, dann weg; alte nicht senden", a
   const err = await setup({ status: 500 });
   try {
     await err.call("PUT", "/v1/reminders", { subscription: sub(), secret: SECRET, reminders: [rem(1)] });
-    for (let i = 0; i < 4; i++) { err.setNow(T0 + (2 + i) * 60000); await err.p.tick(); }
+    for (const m of [2, 3.1, 8.2, 9]) { err.setNow(T0 + m * 60000); await err.p.tick(); }
     assert.equal(err.calls.length, 3);
     const [dev] = Object.values(JSON.parse(readFileSync(err.dataFile, "utf8")).subs);
     assert.equal(dev.reminders.length, 0);
@@ -135,4 +135,51 @@ test("Neustart kennt das Gerät; 60 Tage ohne Änderung wird es gelöscht", asyn
     await again.tick();
     assert.equal(Object.keys(again.state().subs).length, 0);
   } finally { again.close(); }
+});
+
+// --- Korrekturen aus der Prüfung ---
+test("Wiederholungen mit Abstand: +1 Min, +5 Min", async () => {
+  const s = await setup({ status: 503 });
+  try {
+    await s.call("PUT", "/v1/reminders", { subscription: sub(), secret: SECRET, reminders: [rem(1)] });
+    const at = (m, sec = 0) => T0 + m * 60000 + sec * 1000;
+    s.setNow(at(2)); await s.p.tick();
+    assert.equal(s.calls.length, 1);
+    s.setNow(at(2, 30)); await s.p.tick();
+    assert.equal(s.calls.length, 1, "nicht sofort wieder");
+    s.setNow(at(3, 5)); await s.p.tick();
+    assert.equal(s.calls.length, 2);
+    s.setNow(at(5)); await s.p.tick();
+    assert.equal(s.calls.length, 2);
+    s.setNow(at(8, 10)); await s.p.tick();
+    assert.equal(s.calls.length, 3);
+    const [dev] = Object.values(s.p.state().subs);
+    assert.equal(dev.reminders.length, 0, "nach dem dritten Versuch weg");
+  } finally { s.close(); }
+});
+
+test("Obergrenze für Geräte und neue Anmeldungen je Absender", async () => {
+  const dataFile = join(mkdtempSync(join(tmpdir(), "push-")), "state.json");
+  const p = createPushServer({ dataFile, vapid, origins: [ORIGIN], fetch: async () => ({ status: 201 }), now: () => T0, tickMs: 0, maxSubs: 3, newPerIpPerHour: 100 });
+  await new Promise((r) => p.server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${p.server.address().port}`;
+  const put = (n) => fetch_(base + "/v1/reminders", { method: "PUT", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ subscription: sub(`https://fcm.googleapis.com/fcm/send/dev${n}`), secret: SECRET, reminders: [rem(5)] }) });
+  try {
+    const codes = [];
+    for (let i = 0; i < 4; i++) codes.push((await put(i)).status);
+    assert.deepEqual(codes, [204, 204, 204, 503]);
+    assert.equal((await put(0)).status, 204, "bekannte Geräte dürfen weiter ändern");
+  } finally { p.close(); }
+  const p2 = createPushServer({ dataFile: dataFile + "2", vapid, origins: [ORIGIN], fetch: async () => ({ status: 201 }), now: () => T0, tickMs: 0, newPerIpPerHour: 2 });
+  await new Promise((r) => p2.server.listen(0, "127.0.0.1", r));
+  const base2 = `http://127.0.0.1:${p2.server.address().port}`;
+  try {
+    const codes = [];
+    for (let i = 0; i < 3; i++) {
+      codes.push((await fetch_(base2 + "/v1/reminders", { method: "PUT", headers: { "content-type": "application/json", "x-forwarded-for": "203.0.113.9" },
+        body: JSON.stringify({ subscription: sub(`https://fcm.googleapis.com/fcm/send/ip${i}`), secret: SECRET, reminders: [] }) })).status);
+    }
+    assert.deepEqual(codes, [204, 204, 429]);
+  } finally { p2.close(); }
 });

@@ -46,3 +46,33 @@ test("sessionShouldEnd: Höchstzahl oder leere Schlange, nie endlos", () => {
   for (let i = 0; i < 50 && !sessionShouldEnd({ graded, limit: 5, queueLeft: queue }); i++) { graded++; queue = 1; }
   assert.equal(graded, 5);
 });
+
+// --- Korrektur aus der Prüfung: App während einer Einheit geschlossen ---
+import { MemoryStore } from "../app/core/store.js";
+import { startUnit, recoverUnit } from "../app/ui/unit.js";
+
+test("Einheit offen beim Schließen: beim nächsten Start als abgebrochen bzw. teilweise gezählt", async () => {
+  const store = new MemoryStore();
+  const ctx = { store, demo: false, unit: null, replace() {}, reminders: null };
+  const unit = startUnit(ctx, plan, entries);
+  assert.ok(await store.getSetting("unitOpen"), "offene Einheit gemerkt");
+  // App wird geschlossen: nichts weiter passiert. Nächster Start:
+  assert.equal(await recoverUnit(store), "abandoned");
+  const ev = (await store.listActivity()).find((e) => e.kind === "unit");
+  assert.deepEqual(ev.unit, { planned: 300, status: "abandoned" });
+  assert.equal(await store.getSetting("unitOpen"), null);
+  assert.equal(await recoverUnit(store), null, "nur einmal");
+  // ein Teil geschafft → teilweise
+  const ctx2 = { store, demo: false, unit: null, replace() {}, reminders: null };
+  const u2 = startUnit(ctx2, plan, entries);
+  u2.partDone("cards");
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(await recoverUnit(store), "partial");
+  // fertig → nichts offen
+  const ctx3 = { store, demo: false, unit: null, replace() {}, reminders: null };
+  const u3 = startUnit(ctx3, plan, entries);
+  u3.partDone("cards"); u3.partDone("drill");
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(await recoverUnit(store), null);
+  void unit;
+});

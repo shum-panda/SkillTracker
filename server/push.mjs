@@ -20,6 +20,7 @@ const LATE_MS = 2 * 3600000;
 const STALE_MS = 60 * 86400000;
 const MAX_TRIES = 3;
 const CHANGES_PER_MIN = 10;
+const RETRY_MS = [60000, 5 * 60000]; // Abstand vor dem 2. und 3. Versuch
 const SECRET_RE = /^[A-Za-z0-9_-]{43}$/;
 const HOSTS = [/^fcm\.googleapis\.com$/, /^([a-z0-9-]+\.)*push\.services\.mozilla\.com$/, /^web\.push\.apple\.com$/, /^([a-z0-9-]+\.)*notify\.windows\.com$/];
 
@@ -59,7 +60,8 @@ function checkReminders(list, now) {
   }).sort((a, b) => a.at.localeCompare(b.at));
 }
 
-export function createPushServer({ dataFile, vapid, origins = [], fetch = globalThis.fetch, now = () => Date.now(), tickMs = 60000 } = {}) {
+export function createPushServer({ dataFile, vapid, origins = [], fetch = globalThis.fetch, now = () => Date.now(), tickMs = 60000,
+  maxSubs = 1000, newPerIpPerHour = 20 } = {}) {
   let state = { subs: {} };
   if (dataFile && existsSync(dataFile)) {
     try { state = JSON.parse(readFileSync(dataFile, "utf8")); } catch { state = { subs: {} }; }
@@ -80,13 +82,35 @@ export function createPushServer({ dataFile, vapid, origins = [], fetch = global
     changes.set(id, c);
     return c.n > CHANGES_PER_MIN;
   };
+  // Neue Anmeldungen je Absender-IP (hinter Caddy: X-Forwarded-For, aber nur wenn die Anfrage von localhost kommt)
+  const newRegs = new Map(); // ip -> { n, reset }
+  const clientIp = (req) => {
+    const peer = req.socket.remoteAddress || "?";
+    const local = peer === "127.0.0.1" || peer === "::1" || peer === "::ffff:127.0.0.1";
+    const hops = String(req.headers["x-forwarded-for"] || "").split(",").map((x) => x.trim()).filter(Boolean);
+    return local && hops.length ? hops.at(-1) : peer;
+  };
+  const newLimited = (ip) => {
+    const t = now();
+    const c = newRegs.get(ip) || { n: 0, reset: t + 3600000 };
+    if (c.reset <= t) { c.n = 0; c.reset = t + 3600000; }
+    c.n++;
+    newRegs.set(ip, c);
+    return c.n > newPerIpPerHour;
+  };
+  const prune = () => {
+    const t = now();
+    for (const [k, c] of changes) if (c.reset <= t) changes.delete(k);
+    for (const [k, c] of newRegs) if (c.reset <= t) newRegs.delete(k);
+  };
+  const dueAt = (r) => Date.parse(r.nextTry || r.at);
 
   let timer = null;
   let ticking = null;
   const schedule = () => {
     if (!tickMs) return;
     clearTimeout(timer);
-    const next = Math.min(...Object.values(state.subs).flatMap((s) => s.reminders.map((r) => Date.parse(r.at))), Infinity);
+    const next = Math.min(...Object.values(state.subs).flatMap((s) => s.reminders.map(dueAt)), Infinity);
     const wait = Math.max(1000, Math.min(tickMs, next - now()));
     timer = setTimeout(() => tick().catch(() => {}), wait);
     timer.unref?.();
@@ -97,10 +121,11 @@ export function createPushServer({ dataFile, vapid, origins = [], fetch = global
     ticking = (async () => {
       const t = now();
       let changed = false;
+      prune();
       for (const [id, s] of Object.entries(state.subs)) {
         if (t - s.updated > STALE_MS) { delete state.subs[id]; changed = true; continue; }
         for (const r of [...s.reminders]) {
-          if (Date.parse(r.at) > t) continue;
+          if (dueAt(r) > t) continue;
           const drop = () => { const cur = state.subs[id]; if (cur) cur.reminders = cur.reminders.filter((x) => x !== r); changed = true; };
           if (t - Date.parse(r.at) > LATE_MS) { drop(); continue; }
           let status = 0;
@@ -110,7 +135,12 @@ export function createPushServer({ dataFile, vapid, origins = [], fetch = global
           } catch { status = 0; }
           if (status >= 200 && status < 300) drop();
           else if (status === 404 || status === 410) { delete state.subs[id]; changed = true; break; }
-          else { r.tries++; changed = true; if (r.tries >= MAX_TRIES) drop(); }
+          else {
+            r.tries++;
+            changed = true;
+            if (r.tries >= MAX_TRIES) drop();
+            else r.nextTry = new Date(t + RETRY_MS[r.tries - 1]).toISOString();
+          }
         }
       }
       if (changed) save();
@@ -163,6 +193,10 @@ export function createPushServer({ dataFile, vapid, origins = [], fetch = global
       if (limited(id)) throw new HttpError(429, "zu viele Änderungen");
       const have = state.subs[id];
       if (have && have.secretHash !== sha(body.secret)) throw new HttpError(403, "falsches Geheimnis");
+      if (!have && req.method === "PUT") {
+        if (Object.keys(state.subs).length >= maxSubs) throw new HttpError(503, "Absender ist voll");
+        if (newLimited(clientIp(req))) throw new HttpError(429, "zu viele neue Anmeldungen");
+      }
       if (req.method === "DELETE") {
         if (have) { delete state.subs[id]; save(); }
         res.writeHead(204).end();

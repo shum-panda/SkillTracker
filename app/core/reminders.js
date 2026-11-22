@@ -1,4 +1,9 @@
 // Erinnerungen für die nächsten 7 Tage aus Lernprofil und Plan – in Ortszeit, damit 19:00 auch nach der Zeitumstellung 19:00 ist.
+// Gezählt wird in Lerntagen (Beginn 4 Uhr) wie im Lernplan: Um 0:30 ist noch "gestern", eine Erinnerung um 1:30 gehört zum
+// laufenden Lerntag.
+import { learningDayStart } from "./srs.js";
+
+const MAX_AHEAD_MS = 8 * 86400000 - 3600000; // der Absender nimmt höchstens 8 Tage im Voraus an
 const MAX_BODY = 140;
 
 function body({ minutes, cards, label, writeDay }) {
@@ -23,9 +28,12 @@ export function buildReminders({ profile, today, upcoming = [], now = new Date()
   if (!r?.enabled) return [];
   const [hh, mm] = r.time.split(":").map(Number);
   const out = [];
+  const start = learningDayStart(now);
   for (let offset = 0; offset <= 7; offset++) {
-    const at = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset, hh, mm);
-    const weekday = (at.getDay() + 6) % 7;
+    const day = new Date(start.getFullYear(), start.getMonth(), start.getDate() + offset, 12);
+    const at = new Date(day.getFullYear(), day.getMonth(), day.getDate() + (hh < 4 ? 1 : 0), hh, mm);
+    if (at - now > MAX_AHEAD_MS) continue;
+    const weekday = (day.getDay() + 6) % 7;
     if (!r.days.includes(weekday)) continue;
     let info;
     if (offset === 0) {

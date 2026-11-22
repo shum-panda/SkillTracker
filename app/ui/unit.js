@@ -43,6 +43,9 @@ export function sessionShouldEnd({ graded, limit, queueLeft }) {
 export function startUnit(ctx, plan, entries) {
   const store = ctx.store;
   const parts = plan.parts.map((p) => ({ ...p, target: partTarget(p, entries) }));
+  const startedAt = new Date().toISOString();
+  // Offene Einheit merken: Wer die App einfach schließt, bricht sie ab – das zählt beim nächsten Start (recoverUnit).
+  const remember = (value) => { if (!ctx.demo && ctx.store === store) store.setSetting("unitOpen", value).catch(() => {}); };
   const unit = {
     plan, parts, index: 0, done: 0, summary: "", finished: false,
     current() { return parts[this.index] || null; },
@@ -58,6 +61,7 @@ export function startUnit(ctx, plan, entries) {
       this.done++;
       this.index++;
       this.summary = summary;
+      if (this.index < parts.length) remember({ startedAt, planned: plan.minutes * 60, done: this.done, total: parts.length });
       if (this.index >= parts.length) this.finish("done");
       ctx.replace("#/go/weiter");
       return true;
@@ -65,6 +69,7 @@ export function startUnit(ctx, plan, entries) {
     finish(status) {
       if (this.finished) return;
       this.finished = true;
+      remember(null);
       if (!ctx.demo && ctx.store === store) {
         recordActivity(store, { kind: "unit", unit: { planned: plan.minutes * 60, status } })
           .then(() => ctx.reminders?.refresh?.())
@@ -78,7 +83,19 @@ export function startUnit(ctx, plan, entries) {
     },
   };
   ctx.unit = unit;
+  remember({ startedAt, planned: plan.minutes * 60, done: 0, total: parts.length });
   return unit;
+}
+
+// Beim Start: Einheit, die beim letzten Mal offen blieb (App geschlossen), als abgebrochen bzw. teilweise eintragen.
+export async function recoverUnit(store) {
+  const saved = await store.getSetting("unitOpen");
+  if (!saved) return null;
+  await store.setSetting("unitOpen", null);
+  const status = unitStatus(saved.done || 0, saved.total || 0);
+  if (status === "done") return null;
+  await recordActivity(store, { kind: "unit", at: saved.startedAt, unit: { planned: saved.planned || 0, status } }).catch(() => {});
+  return status;
 }
 
 export function unitBarHtml(unit, esc) {

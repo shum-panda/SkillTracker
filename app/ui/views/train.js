@@ -107,6 +107,8 @@ export async function renderSession(root, ctx, [category]) {
       await store.setSetting("drills", drills.slice(-500)).catch(() => {});
       await recordActivity(store, { kind: "drill", count: total, ms: Math.min(3600000, Date.now() - startedAt) }).catch(() => {});
       if (ctx.unit?.partDone("drill", `${cat.label}: ${correct} von ${total} richtig.`)) return;
+    } else if (ctx.unit?.partDone("drill", `${cat.label}: Gerade gab es keine Übungen – weiter mit dem nächsten Teil.`)) {
+      return; // ohne Übungen soll die Einheit nicht hängen bleiben
     }
     root.innerHTML = `
       <div class="head"><p class="kicker">${esc(cat.label)}</p><h1>${total ? `${correct} von ${total} richtig` : "Keine Übungen"}</h1>

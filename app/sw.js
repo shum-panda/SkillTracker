@@ -38,7 +38,8 @@ self.addEventListener("fetch", (e) => {
 const appUrl = (hash) => new URL("index.html" + (String(hash || "").startsWith("#/go/") ? hash : "#/go/heute"), self.registration.scope).href;
 
 function show(r) {
-  const day = String(r.at || new Date().toISOString()).slice(0, 10);
+  const d = new Date(r.at || Date.now());
+  const day = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; // Ortszeit: Absender und Gerät ersetzen sich gegenseitig
   return self.registration.showNotification(r.title || "Zeit zum Lernen", {
     body: r.body || "", tag: `lernplan-${day}`, data: { url: r.url || "#/go/heute" }, icon: "icons/icon-192.png", badge: "icons/icon-192.png",
   });

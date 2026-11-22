@@ -50,3 +50,14 @@ test("aus = keine Erinnerungen", () => {
   p.reminder.enabled = false;
   assert.deepEqual(buildReminders({ profile: p, today: today(), upcoming, now: NOW }), []);
 });
+
+test("Lerntag-Grenze: Einheit um 0:30 erledigt streicht nicht die Erinnerung am selben Abend", () => {
+  const night = new Date(2026, 10, 24, 0, 30); // Di 0:30 = Lerntag Montag
+  const list = buildReminders({ profile: defaultProfile(), today: today({ done: true }), upcoming, now: night });
+  assert.equal(list[0].at, new Date(2026, 10, 24, 19, 0).toISOString(), "Di 19:00 bleibt");
+  assert.equal(list.length, 7);
+  const late = defaultProfile();
+  late.reminder.time = "01:30";
+  const l2 = buildReminders({ profile: late, today: today(), upcoming, now: new Date(2026, 10, 24, 0, 30) });
+  assert.equal(l2[0].at, new Date(2026, 10, 24, 1, 30).toISOString(), "01:30 gehört noch zum laufenden Lerntag");
+});

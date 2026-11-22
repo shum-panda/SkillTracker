@@ -235,7 +235,9 @@ export async function render(root, ctx) {
     if (!next) return;
     Object.assign(profile, next);
     await ctx.store.setSetting("profile", next);
-    if (!ctx.demo) await ctx.reminders?.refresh?.().catch(() => {});
+    // erst nach einer kurzen Pause an den Absender (mehrere Klicks = eine Übermittlung)
+    clearTimeout(ctx.profileRefreshTimer);
+    if (!ctx.demo) ctx.profileRefreshTimer = setTimeout(() => ctx.reminders?.refresh?.().catch(() => {}), 1200);
     ctx.toast("Lernplan gespeichert.");
   };
   for (const el of root.querySelectorAll("#plan-settings select, #plan-settings input")) el.addEventListener("change", saveProfile);
@@ -243,6 +245,7 @@ export async function render(root, ctx) {
   $("wipe").onclick = async () => {
     if (!(await confirmDialog("Alles löschen?", "Alle Texte, Bewertungen und Schlüssel auf diesem Gerät werden gelöscht. Das lässt sich nicht rückgängig machen.",
       { ok: "Alles löschen", danger: true }))) return;
+    if (!ctx.demo) await ctx.reminders?.disable?.().catch(() => {}); // beim Absender abmelden, solange das Geheimnis noch da ist
     await ctx.store.clearAll();
     ctx.cardsSync = null;
     await ctx.applyTheme();
