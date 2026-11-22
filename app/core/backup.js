@@ -7,11 +7,13 @@ import { categoryById } from "./taxonomy.js";
 import { OUTCOMES } from "./revision.js";
 import { makeCard, mergeCards } from "./cards.js";
 import { newSched } from "./srs.js";
+import { KINDS } from "./activity.js";
+import { cleanProfile } from "./profile.js";
 
 const APP = "skilltracker";
 const VERSION = 1;
 const METRIC_KEYS = ["words", "sentences", "mtld", "levelShare", "levelCounted", "avgLen", "subPerSentence"];
-const SETTING_KEYS = ["providers", "ocrProvider", "analysisProvider", "showImproved", "theme", "newPerDay", "deletedCardKeys", "drills"];
+const SETTING_KEYS = ["providers", "ocrProvider", "analysisProvider", "showImproved", "theme", "newPerDay", "deletedCardKeys", "drills", "profile"];
 
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const s = (v, max = 100000) => (typeof v === "string" ? v.slice(0, max) : "");
@@ -26,7 +28,7 @@ export async function exportData(store, { includeKeys = false } = {}) {
     settings.providers = settings.providers.map((p) => ({ ...p, apiKey: "" }));
   }
   return { app: APP, version: VERSION, exportedAt: new Date().toISOString(), settings, entries: await store.listEntries(),
-    cards: store.listCards ? await store.listCards() : [] };
+    cards: store.listCards ? await store.listCards() : [], activity: store.listActivity ? await store.listActivity() : [] };
 }
 
 export const isUid = (v) => typeof v === "string" && /^[A-Za-z0-9-]{8,64}$/.test(v);
@@ -64,6 +66,25 @@ function cleanProvider(p) {
 // Wohin ein Schlüssel geschickt würde: Typ + Adresse. Ändert sich das, bleibt der alte Schlüssel nicht hängen.
 export const target = (p) => `${p.type}|${p.type === "compatible" ? String(p.baseUrl || "").replace(/\/+$/, "") : ""}`;
 
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const UNIT_STATUS = ["done", "partial", "abandoned"];
+
+// Ein Aktivitäts-Ereignis aus fremder Hand: nur bekannte Felder mit gültigen Werten.
+export function cleanActivity(e) {
+  if (!isObj(e) || !KINDS.includes(e.kind) || !isUid(e.uid) || !iso(e.at) || typeof e.day !== "string" || !DAY_RE.test(e.day)) return null;
+  const out = { uid: e.uid, at: iso(e.at), day: e.day, kind: e.kind };
+  if (e.count !== undefined) { if (!int(e.count, 0, 10000)) return null; out.count = e.count; }
+  if (e.ms !== undefined) { if (!int(e.ms, 0, 86400000)) return null; out.ms = e.ms; }
+  if (e.unit !== undefined) {
+    if (!isObj(e.unit) || !UNIT_STATUS.includes(e.unit.status) || !int(e.unit.planned, 0, 7200)) return null;
+    out.unit = { planned: e.unit.planned, status: e.unit.status };
+  }
+  if (e.backfill === true) out.backfill = true;
+  return out;
+}
+
+export const cleanActivityList = (list) => (Array.isArray(list) ? list : []).slice(0, 20000).map(cleanActivity).filter(Boolean);
+
 export function cleanSettings(raw) {
   const out = {};
   if (!isObj(raw)) return out;
@@ -76,6 +97,10 @@ export function cleanSettings(raw) {
     out.drills = raw.drills.filter((d) => isObj(d) && iso(d.createdAt) && categoryById(d.category) && Number.isInteger(d.total)
       && d.total >= 1 && d.total <= 100 && Number.isInteger(d.correct) && d.correct >= 0 && d.correct <= d.total)
       .map((d) => ({ createdAt: iso(d.createdAt), category: d.category, total: d.total, correct: d.correct })).slice(-500);
+  }
+  if (raw.profile !== undefined) {
+    const p = cleanProfile(raw.profile);
+    if (p) out.profile = p;
   }
   if (Array.isArray(raw.deletedEntryUids)) out.deletedEntryUids = raw.deletedEntryUids.filter(isUid).slice(-5000);
   if (Array.isArray(raw.deletedCardKeys)) out.deletedCardKeys = raw.deletedCardKeys.filter((k) => typeof k === "string" && k.length < 600).slice(-5000);
@@ -143,6 +168,7 @@ export function parseImport(obj) {
   return {
     settings, entries, skipped: raw.length - entries.length,
     cards: (Array.isArray(obj.cards) ? obj.cards : []).map(cleanCard).filter(Boolean).slice(0, 20000),
+    activity: cleanActivityList(obj.activity),
     hasKeys: (settings.providers || []).some((p) => p.apiKey),
   };
 }
@@ -193,5 +219,6 @@ export async function applyImport(store, parsed, { withKeys = false } = {}) {
     for (const c of newCards) await store.addCard(c);
     for (const c of updated) await store.putCard(c);
   }
+  if (store.addActivity) for (const ev of parsed.activity || []) await store.addActivity(ev);
   return { added: added.length, skipped: parsed.skipped };
 }

@@ -185,3 +185,66 @@ test("Abgleich-Link: Vermittler nur per https (außer lokal)", () => {
   assert.ok(parseSyncHash(q("http://127.0.0.1:8830")));
   assert.ok(parseSyncHash(q("https://sync.example.de")));
 });
+
+// --- Teil 7: Aktivität und Lernprofil ---
+import { backfillActivity, recordActivity } from "../app/core/activity.js";
+import { defaultProfile } from "../app/core/profile.js";
+
+async function withTexts() {
+  const s = await device();
+  await s.addEntry(base("2026-11-01T10:00:00.000Z", "One text here."));
+  await s.addEntry(base("2026-11-02T10:00:00.000Z", "Another text here."));
+  return s;
+}
+
+test("Aktivität wird vereinigt und nicht verdoppelt", async () => {
+  const a = await withTexts();
+  const b = await withTexts();
+  await backfillActivity(a);
+  await backfillActivity(b);
+  await recordActivity(a, { kind: "cards", count: 5, ms: 60000 });
+  assert.equal((await b.listActivity()).length, 2);
+  await mergeSnapshot(b, await buildSnapshot(a));
+  assert.equal((await b.listActivity()).length, 3, "nachgetragene Ereignisse gibt es nur einmal");
+});
+
+test("Profil: neueres updatedAt gewinnt", async () => {
+  const a = await device();
+  const b = await device();
+  await a.setSetting("profile", { ...defaultProfile(), minutes: 20, updatedAt: "2026-11-20T10:00:00.000Z" });
+  await b.setSetting("profile", { ...defaultProfile(), minutes: 5, updatedAt: "2026-11-19T10:00:00.000Z" });
+  await mergeSnapshot(b, await buildSnapshot(a));
+  assert.equal((await b.getSetting("profile")).minutes, 20);
+  await b.setSetting("profile", { ...defaultProfile(), minutes: 5, updatedAt: "2026-11-21T10:00:00.000Z" });
+  await mergeSnapshot(b, await buildSnapshot(a));
+  assert.equal((await b.getSetting("profile")).minutes, 5);
+});
+
+test("Fremde Aktivität wird gereinigt; Geräte-eigenes bleibt zu Hause", async () => {
+  const a = await device();
+  await a.setSetting("pushSecret", "geheim");
+  await a.setSetting("cardTimes", [1000]);
+  const snap = await buildSnapshot(a);
+  assert.equal(JSON.stringify(snap).includes("geheim"), false);
+  assert.equal(snap.settings.cardTimes, undefined);
+  snap.activity = [
+    { uid: "good-uid-0001", at: "2026-11-20T10:00:00.000Z", day: "2026-11-20", kind: "write" },
+    { uid: "bad-uid-00001", at: "2026-11-20T10:00:00.000Z", day: "2026-11-20", kind: "hack" },
+    { uid: "<x>", at: "2026-11-20T10:00:00.000Z", day: "2026-11-20", kind: "write" },
+    { uid: "bad-uid-00002", at: "kaputt", day: "2026-11-20", kind: "write" },
+  ];
+  const b = await device();
+  await mergeSnapshot(b, snap);
+  assert.deepEqual((await b.listActivity()).map((e) => e.uid), ["good-uid-0001"]);
+});
+
+test("Sicherung bringt Aktivität und Profil mit", async () => {
+  const a = await withTexts();
+  await backfillActivity(a);
+  await a.setSetting("profile", { ...defaultProfile(), minutes: 20 });
+  const parsed = parseImport(JSON.parse(JSON.stringify(await exportData(a))));
+  const b = await device();
+  await applyImport(b, parsed);
+  assert.equal((await b.listActivity()).length, 2);
+  assert.equal((await b.getSetting("profile")).minutes, 20);
+});

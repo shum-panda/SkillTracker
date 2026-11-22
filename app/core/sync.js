@@ -1,6 +1,6 @@
 // Geräte-Abgleich: Stand als Paket packen und ein fremdes Paket beidseitig zusammenführen (nichts wird überschrieben).
 // Verweise reisen als geräteübergreifende uid und werden lokal auf IDs umgeschrieben.
-import { cleanCard, cleanEntry, cleanSettings, isUid, target } from "./backup.js";
+import { cleanActivityList, cleanCard, cleanEntry, cleanSettings, isUid, target } from "./backup.js";
 import { mergeCards } from "./cards.js";
 
 const APP = "skilltracker";
@@ -38,7 +38,9 @@ export async function buildSnapshot(store, { includeProviders = false } = {}) {
       drills: (await store.getSetting("drills")) || [],
       deletedCardKeys: (await store.getSetting("deletedCardKeys")) || [],
       deletedEntryUids: (await store.getSetting("deletedEntryUids")) || [],
+      ...((await store.getSetting("profile")) ? { profile: await store.getSetting("profile") } : {}),
     },
+    activity: store.listActivity ? await store.listActivity() : [],
   };
   if (includeProviders) out.providers = (await store.getSetting("providers")) || [];
   return out;
@@ -145,6 +147,17 @@ export async function mergeSnapshot(store, snap, { confirmDeletions = null, acce
   const dk = new Set(drills.map(drillKey));
   const newDrills = (settings.drills || []).filter((d) => !dk.has(drillKey(d)));
   if (newDrills.length) await store.setSetting("drills", [...drills, ...newDrills].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(-500));
+
+  // Aktivität: Vereinigung über uid (gleiche nachgetragene Ereignisse haben auf allen Geräten dieselbe uid)
+  if (store.addActivity) {
+    const have = new Set((await store.listActivity()).map((e) => e.uid));
+    for (const ev of cleanActivityList(snap.activity)) if (!have.has(ev.uid)) await store.addActivity(ev);
+  }
+  // Lernprofil: das zuletzt geänderte gewinnt
+  if (settings.profile) {
+    const mine = await store.getSetting("profile");
+    if (!mine || String(settings.profile.updatedAt) > String(mine.updatedAt || "")) await store.setSetting("profile", settings.profile);
+  }
 
   // KI-Zugänge nur, wenn das andere Gerät sie ausdrücklich mitgeschickt hat
   if (acceptProviders && Array.isArray(snap.providers)) {
