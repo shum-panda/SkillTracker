@@ -151,7 +151,7 @@ bei jedem Öffnen, nach jeder Einheit und nach Profiländerungen neu und schickt
 
 ### Weg A: Absender auf dem eigenen Server (`server/push.mjs`)
 
-- Node-Dienst `skilltracker-push` (Node 24, ohne Abhängigkeiten, Speicher `node:sqlite` in `/var/lib/skilltracker-push`), hinter Caddy unter `https://push.91-98-206-40.sslip.io`, als gehärteter systemd-Dienst wie der Vermittler. Ein Zeitgeber auf die nächste fällige Erinnerung (pünktlich), zusätzlich Prüfung jede Minute; nach einem Neustart werden verpasste Erinnerungen bis 2 Stunden alt noch gesendet, ältere verworfen.
+- Node-Dienst `skilltracker-push` (Node ≥ 20, ohne Abhängigkeiten, Speicher eine JSON-Datei `/var/lib/skilltracker-push/state.json`, atomar über Umbenennen geschrieben – bei wenigen Geräten reicht das, und es läuft auch mit Node 20 auf dem PC), hinter Caddy unter `https://push.91-98-206-40.sslip.io`, als gehärteter systemd-Dienst wie der Vermittler. Ein Zeitgeber auf die nächste fällige Erinnerung (pünktlich), zusätzlich Prüfung jede Minute; nach einem Neustart werden verpasste Erinnerungen bis 2 Stunden alt noch gesendet, ältere verworfen.
 - Schnittstelle (JSON, CORS nur für erlaubte Herkünfte `ALLOWED_ORIGINS`):
   - `GET /v1/key` → öffentlicher VAPID-Schlüssel.
   - `PUT /v1/reminders` `{ subscription: { endpoint, keys: { p256dh, auth } }, secret, reminders: [{ at, title,
